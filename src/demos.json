@@ -12,5 +12,10 @@
   "pull-apart": "Band_Pull_Apart",
   "face-pull": "Face_Pull",
   "dead-bug": "Dead_Bug",
-  "plank": "Plank"
+  "plank": "Plank",
+  "one-arm-row": "One-Arm_Kettlebell_Row",
+  "good-morning": "Band_Good_Morning",
+  "worlds-greatest-stretch": "Worlds_Greatest_Stretch",
+  "band-press": "Shoulder_Press_-_With_Bands",
+  "floor-press": "One-Arm_Kettlebell_Floor_Press"
 }

@@ -19,6 +19,11 @@ describe('toSet', () => {
     expect(set).toMatchObject({ id: '3', setNumber: 1, reps: 15, band: 3, rir: null });
   });
 
+  it('reads Quick sets and treats unknown workouts as A', () => {
+    expect(toSet({ id: '1', workout: 'Q' }).workout).toBe('Q');
+    expect(toSet({ id: '1', workout: 'X' }).workout).toBe('A');
+  });
+
   it('rejects a row without an id', () => {
     expect(() => toSet({ date: '2026-11-02' })).toThrow('no id');
   });
@@ -47,6 +52,6 @@ describe('toBody', () => {
 
 describe('setKey', () => {
   it('identifies a set by day, exercise and number', () => {
-    expect(setKey({ date: '2026-11-02', exercise: 'rdl', setNumber: 3 })).toBe('2026-11-02|rdl|3');
+    expect(setKey({ date: '2026-11-02', workout: 'Q', exercise: 'rdl', setNumber: 3 })).toBe('2026-11-02|Q|rdl|3');
   });
 });

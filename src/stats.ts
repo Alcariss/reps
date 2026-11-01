@@ -1,22 +1,26 @@
 import { addDays, daysBetween, startOfWeek } from './dates';
 import type { BodyRecord } from './model';
-import { otherWorkout, type WorkoutId } from './program';
+import { otherWorkout, type PlanId, type WorkoutId } from './program';
 
 export type SessionInfo = { date: string; workout: WorkoutId };
 
-/** One entry per training day, oldest first. */
+/** One entry per session (day and workout), oldest first. */
 export function trainingDays(sets: readonly SessionInfo[]): SessionInfo[] {
-  const byDate = new Map<string, WorkoutId>();
+  const sessions = new Map<string, SessionInfo>();
   for (const set of sets) {
-    byDate.set(set.date, set.workout);
+    sessions.set(`${set.date}|${set.workout}`, { date: set.date, workout: set.workout });
   }
-  return [...byDate.entries()]
-    .map(([date, workout]) => ({ date, workout }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+  return [...sessions.values()].sort((a, b) => a.date.localeCompare(b.date) || a.workout.localeCompare(b.workout));
+}
+
+/** Quick sessions logged up to and including `date`. */
+export function quickSessionCount(days: readonly SessionInfo[], date: string): number {
+  return days.filter((day) => day.workout === 'Q' && day.date <= date).length;
 }
 
 export type NextWorkout = {
-  workout: WorkoutId;
+  /** A/B alternate; Quick sessions in between do not change the order. */
+  workout: PlanId;
   daysSince: number | null;
   /** Trained yesterday or today: 3×/week works best on non-consecutive days. */
   restSuggested: boolean;
@@ -28,18 +32,20 @@ export function nextWorkout(days: readonly SessionInfo[], today: string): NextWo
   if (!last) {
     return { workout: 'A', daysSince: null, restSuggested: false, trainedToday: false };
   }
+  const lastPlan = days.filter((day): day is SessionInfo & { workout: PlanId } => day.workout !== 'Q').at(-1);
   const daysSince = daysBetween(last.date, today);
   return {
-    workout: otherWorkout(last.workout),
+    workout: lastPlan ? otherWorkout(lastPlan.workout) : 'A',
     daysSince,
     restSuggested: daysSince <= 1,
     trainedToday: daysSince === 0
   };
 }
 
+/** Sessions this week; a day counts once even with two workouts. */
 export function sessionsThisWeek(days: readonly SessionInfo[], today: string): number {
   const monday = startOfWeek(today);
-  return days.filter((day) => day.date >= monday && day.date <= today).length;
+  return new Set(days.filter((day) => day.date >= monday && day.date <= today).map((day) => day.date)).size;
 }
 
 type Point = { date: string; value: number };

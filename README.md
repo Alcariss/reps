@@ -13,7 +13,8 @@ e-mails on the allowlist.
 - **Today.** Suggests the next workout (A and B alternate, 3×/week on
   non-consecutive days), shows days since the last one, the plan with the
   current variation and sets, this week's sessions and the 7-day average weight.
-  A banner says when a deload week is due.
+  A banner says when a deload week is due. Next to it, a **Quick (20–25 min)**
+  circuit for busy days.
 - **Workout player.** A 5-minute warm-up checklist, then one exercise at a
   time: animated demo, form cues, target (variation, sets × rep range, tempo,
   RIR, band level), big +/− steppers prefilled from last time, a 0–4 RIR
@@ -24,6 +25,9 @@ e-mails on the allowlist.
   metronome**. The screen stays on during a workout. "Too hard / too easy"
   moves one band level or variation. The finish screen shows which exercises
   earned a progression.
+- **Quick circuit.** A 3-minute warm-up with demos, 4 exercises done round by
+  round (exercise → rest with "up next" → next exercise, round counter), then
+  a timed finisher: 15 swings straight into a 30–45 s plank, 3 rounds.
 - **Progress.** Per exercise: current step on the ladder and band, trend of
   total reps per session (inline SVG), best and total of the last session, next
   prescription, progressing/stalled flags, and easier/harder overrides.
@@ -53,6 +57,18 @@ Full body, 3×/week, A/B alternating. 3 working sets per exercise to start,
 The scapular push-up ("lopatkový klik") is in the warm-up and as an accessory;
 the band push-up does the main chest work.
 
+**Quick (20–25 min)**, for days without time for A or B. It does not change
+the A/B order.
+
+- Warm-up, 1 round: band pull-apart ×15 (light band), world's greatest
+  stretch ×4/side, band good morning ×10 (medium band).
+- Circuit, 3 rounds: goblet squat · KB RDL · push-up · single-arm band row,
+  60–90 s rest between exercises. Every second Quick swaps the push-up for a
+  press, alternating KB floor press and single-arm band overhead press.
+- Finisher, 3 rounds without rest: KB swing ×15 + plank 30–45 s.
+- Quick sets are logged with `workout = Q` and use the same exercise ids and
+  ladders, so they appear in the history and move the same progression.
+
 **Progression ladders** (`src/program.ts`):
 
 - Squat: goblet → goblet 3 s down + 2 s pause → goblet 1½ reps.
@@ -75,6 +91,11 @@ the band push-up does the main chest work.
   below the range: repeat once, then −1 set or one step back.
 - **Deload** every 6 weeks, or earlier when two exercises stall: one week at
   half the sets and 3–4 RIR. Stall counters restart after it.
+- **Quick progression.** When every round of an exercise reaches the top of
+  the range, its circuit rest shortens 90 → 75 → 60 → 45 s. At 45 s the
+  regular rules apply (stronger band or next variation) and the rest starts
+  again at 90 s. Quick never changes the A/B set count; the finisher is
+  logged for history only.
 - Never to failure on RDLs and swings; the last set of push-ups, rows and band
   work may go to 0 RIR.
 
@@ -128,7 +149,7 @@ VITE_API_URL_PRIMARY=http://localhost:8787/reps VITE_AUTH_PROVIDERS= npm run dev
 1. **Grist:** document "Reps" with two tables. Dates and text are **Text**
    columns; the rest **Numeric**. Both need `owner`, `created_at`,
    `updated_at` (Text) for the worker.
-   - `Sets`: `date`, `workout` (A/B), `exercise`, `variant`, `set_number`,
+   - `Sets`: `date`, `workout` (A/B/Q), `exercise`, `variant`, `set_number`,
      `reps`, `seconds`, `rir`, `band`, `note`
    - `Body`: `date`, `weight`, `waist`, `steps`, `protein`, `note`
 2. **Worker:** the `reps` entry in `pwa-kit/worker/src/apps.ts` with the

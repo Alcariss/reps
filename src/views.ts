@@ -1,6 +1,7 @@
 import { escapeHtml, formatIsoDate } from '@alcariss/pwa-kit';
 import {
   CHANGE_LABELS,
+  type Change,
   isProgression,
   type DeloadStatus,
   type ExerciseState
@@ -10,6 +11,9 @@ import { bandLabel, type Prefs } from './prefs';
 import {
   BAND_LEVELS,
   EXERCISES,
+  QUICK_FINISHER,
+  QUICK_POOL,
+  QUICK_WARMUP,
   WARMUP,
   WORKOUTS,
   demoFrames,
@@ -17,9 +21,10 @@ import {
   findVariant,
   unitLabel,
   type DemoKey,
+  type PlanId,
   type WorkoutId
 } from './program';
-import { isComplete, type Draft, type DraftExercise } from './session';
+import { finisherRound, isComplete, type Draft, type DraftExercise } from './session';
 import type { NextWorkout, WeightTrend } from './stats';
 
 export type Tab = 'today' | 'progress' | 'body' | 'settings';
@@ -87,7 +92,11 @@ export function sparkline(values: readonly number[], options: { width?: number; 
   `;
 }
 
-function workoutPlan(workout: WorkoutId, states: Record<string, ExerciseState>, deload: boolean): string {
+export function workoutLabel(workout: WorkoutId): string {
+  return workout === 'Q' ? 'Quick' : `Workout ${workout}`;
+}
+
+function workoutPlan(workout: PlanId, states: Record<string, ExerciseState>, deload: boolean): string {
   return `<ol class="plan">${WORKOUTS[workout].map((exerciseId) => {
     const ex = exercise(exerciseId);
     const state = states[exerciseId];
@@ -113,7 +122,9 @@ const TIPS = [
 export function renderToday(view: {
   today: string;
   next: NextWorkout;
-  chosen: WorkoutId;
+  chosen: PlanId;
+  /** Exercise ids of the next Quick circuit. */
+  quick: string[];
   states: Record<string, ExerciseState>;
   deload: DeloadStatus;
   deloadUntil: string | null;
@@ -132,7 +143,7 @@ export function renderToday(view: {
 
   const draft = view.draft && view.draft.step < view.draft.exercises.length
     ? `<section class="card highlight">
-        <h2>Workout ${escapeHtml(view.draft.workout)} in progress</h2>
+        <h2>${escapeHtml(workoutLabel(view.draft.workout))} in progress</h2>
         <p class="muted">Started ${escapeHtml(formatDate(view.draft.date))}.</p>
         <div class="row"><button type="button" class="big" data-action="resume">Resume workout</button>
         <button type="button" class="ghost" data-action="discard">Discard</button></div>
@@ -156,6 +167,7 @@ export function renderToday(view: {
     ? '<p class="note">You trained yesterday. Muscles grow between sessions: 3×/week on non-consecutive days works best. A walk counts today!</p>'
     : '';
 
+  const busy = view.draft !== null && view.draft.step < view.draft.exercises.length;
   const avg = view.trend.average === null ? '—' : `${fmt(view.trend.average)} kg`;
   const rate = view.trend.ratePct === null ? '' : ` (${signed(view.trend.ratePct)} %/wk)`;
 
@@ -170,8 +182,9 @@ export function renderToday(view: {
       <p class="muted">${escapeHtml(lastText)}${view.chosen !== next.workout ? ' (suggested: ' + escapeHtml(next.workout) + ')' : ''}</p>
       ${rest}
       ${workoutPlan(view.chosen, view.states, deload.active)}
-      <button type="button" class="big" data-action="start" ${view.draft && view.draft.step < view.draft.exercises.length ? 'disabled' : ''}>Start workout ${escapeHtml(view.chosen)}</button>
+      <button type="button" class="big" data-action="start" ${busy ? 'disabled' : ''}>Start workout ${escapeHtml(view.chosen)}</button>
     </section>
+    ${renderQuickCard(view.quick, view.states, deload.active, busy)}
     <section class="card stats">
       <div><strong>${view.sessionsThisWeek}/3</strong><span>sessions this week</span></div>
       <div><strong>${escapeHtml(avg)}</strong><span>7-day avg weight${escapeHtml(rate)}</span></div>
@@ -184,7 +197,65 @@ export function renderToday(view: {
   `;
 }
 
-export function renderWarmup(draft: Draft): string {
+function renderQuickCard(circuit: string[], states: Record<string, ExerciseState>, deload: boolean, busy: boolean): string {
+  const rounds = deload ? 2 : 3;
+  const rows = circuit.map((exerciseId) => {
+    const ex = exercise(exerciseId);
+    const state = states[exerciseId];
+    const variant = findVariant(ex, state?.variant ?? ex.start);
+    const rest = deload ? 90 : state?.quickRest ?? 90;
+    return `<li><span>${escapeHtml(variant.name)}</span><span class="muted">${ex.min}–${ex.max} ${escapeHtml(unitLabel(ex, variant))} · rest ${rest} s</span></li>`;
+  }).join('');
+  return `
+    <section class="card quick">
+      <div class="split">
+        <h2>Quick (20–25 min)</h2>
+        <span class="badge">${rounds} rounds</span>
+      </div>
+      <p class="muted small">Short on time? 3-min warm-up, a ${circuit.length}-exercise circuit, then ${QUICK_FINISHER.rounds} rounds of ${QUICK_FINISHER.swings} swings + ${QUICK_FINISHER.plankMin}–${QUICK_FINISHER.plankMax} s plank. Counts toward progress; A/B order stays the same.</p>
+      <ol class="plan">${rows}</ol>
+      <button type="button" class="big secondary" data-action="start-quick" ${busy ? 'disabled' : ''}>Start Quick</button>
+    </section>
+  `;
+}
+
+function renderQuickWarmup(draft: Draft, base: string): string {
+  const done = draft.warmup.every(Boolean);
+  return `
+    <header class="player-head">
+      <button type="button" class="ghost" data-action="exit">✕</button>
+      <span>Quick · Warm-up</span>
+      <span></span>
+    </header>
+    <section class="card">
+      <h2>3-minute warm-up</h2>
+      <p class="muted">One round. Tap each item when done.</p>
+      <ul class="checklist">
+        ${QUICK_WARMUP.map((item, index) => {
+          const ex = exercise(item.exercise);
+          const variant = findVariant(ex, ex.start);
+          return `
+          <li>
+            <button type="button" class="check ${draft.warmup[index] ? 'done' : ''}" data-action="warmup" data-index="${index}" aria-pressed="${draft.warmup[index] ? 'true' : 'false'}">
+              <span class="box" aria-hidden="true">${draft.warmup[index] ? '✓' : ''}</span>${escapeHtml(`${variant.name} · ${item.amount}`)}
+            </button>
+            <details class="howto">
+              <summary>How</summary>
+              ${renderDemo(variant.demo, base)}
+              <ul class="cues">${ex.cues.map((cue) => `<li>${escapeHtml(cue)}</li>`).join('')}</ul>
+            </details>
+          </li>`;
+        }).join('')}
+      </ul>
+      <button type="button" class="big ${done ? '' : 'secondary'}" data-action="next">${done ? 'Start round 1' : 'Skip warm-up'}</button>
+    </section>
+  `;
+}
+
+export function renderWarmup(draft: Draft, base: string): string {
+  if (draft.circuit) {
+    return renderQuickWarmup(draft, base);
+  }
   const done = draft.warmup.every(Boolean);
   return `
     <header class="player-head">
@@ -206,13 +277,15 @@ export function renderWarmup(draft: Draft): string {
   `;
 }
 
-function targetLine(item: DraftExercise, prefs: Prefs): string {
+function targetLine(item: DraftExercise, prefs: Prefs, circuit: boolean): string {
   const ex = exercise(item.exercise);
   const variant = findVariant(ex, item.variant);
   const p = item.prescription;
-  const parts = ex.kind === 'emom'
-    ? [`${p.sets} min EMOM`, `${p.min}–${p.max} reps each minute`]
-    : [`${p.sets} × ${p.min}–${p.max} ${unitLabel(ex, variant)}`];
+  const parts = circuit
+    ? [`${p.sets} rounds × ${p.min}–${p.max} ${unitLabel(ex, variant)}`, `rest ${item.rest ?? ex.restSeconds} s`]
+    : ex.kind === 'emom'
+      ? [`${p.sets} min EMOM`, `${p.min}–${p.max} reps each minute`]
+      : [`${p.sets} × ${p.min}–${p.max} ${unitLabel(ex, variant)}`];
   if (variant.tempo) {
     parts.push(`tempo ${variant.tempo}`);
   }
@@ -284,9 +357,17 @@ export function renderExercise(draft: Draft, prefs: Prefs, base: string, input: 
   }
   const ex = exercise(item.exercise);
   const variant = findVariant(ex, item.variant);
-  const complete = isComplete(item);
-  const last = index === draft.exercises.length - 1;
+  const circuit = draft.circuit;
+  const complete = circuit ? item.logged.length >= circuit.round : isComplete(item);
+  const last = circuit ? false : index === draft.exercises.length - 1;
+  const lastInCircuit = circuit !== undefined && index === circuit.size - 1 && circuit.round >= circuit.rounds;
   const setNumber = item.logged.length + 1;
+  const setLabel = circuit ? `Round ${circuit.round} of ${circuit.rounds}` : `Set ${setNumber} of ${item.prescription.sets}`;
+  const logLabel = circuit ? `Log round ${circuit.round}` : `Log set ${setNumber}`;
+  const position = circuit
+    ? `Quick · Round ${circuit.round}/${circuit.rounds} · ${index + 1}/${circuit.size}`
+    : `Workout ${draft.workout} · ${index + 1}/${draft.exercises.length}`;
+  const nextLabel = lastInCircuit ? 'Finisher ▶' : last ? 'Finish' : complete ? (circuit ? 'Next ▶' : 'Next exercise ▶') : 'Skip ▶';
   const change = item.change === 'start' || item.change === 'none'
     ? ''
     : `<span class="badge ${isProgression(item.change) ? 'up' : item.change.endsWith('-') || item.change === 'repeat' ? 'down' : ''}">${escapeHtml(CHANGE_LABELS[item.change])}</span>`;
@@ -317,12 +398,12 @@ export function renderExercise(draft: Draft, prefs: Prefs, base: string, input: 
       : '';
     logger = `
       <div class="logger">
-        <h3>Set ${setNumber} of ${item.prescription.sets}</h3>
+        <h3>${escapeHtml(setLabel)}</h3>
         ${holdTimer}
         ${stepper('value', input.value, unitLabel(ex, variant))}
         ${ex.kind === 'reps' ? rirPicker(input.rir, ex.rirFloor) : ''}
         ${variant.banded && input.band !== null ? bandPicker(prefs, input.band) : ''}
-        <button type="button" class="big" data-action="log">Log set ${setNumber}</button>
+        <button type="button" class="big" data-action="log">${escapeHtml(logLabel)}</button>
       </div>
     `;
   }
@@ -330,39 +411,41 @@ export function renderExercise(draft: Draft, prefs: Prefs, base: string, input: 
   return `
     <header class="player-head">
       <button type="button" class="ghost" data-action="exit" aria-label="Leave workout">✕</button>
-      <span>Workout ${escapeHtml(draft.workout)} · ${index + 1}/${draft.exercises.length}${draft.deload ? ' · deload' : ''}</span>
+      <span>${escapeHtml(position)}${draft.deload ? ' · deload' : ''}</span>
       <button type="button" class="ghost ${prefs.tempoCue ? 'on' : ''}" data-action="tempo" aria-pressed="${prefs.tempoCue ? 'true' : 'false'}" title="Tempo metronome">♩</button>
     </header>
     <section class="card exercise">
       ${renderDemo(variant.demo, base)}
       <h2>${escapeHtml(variant.name)}</h2>
       ${change}
-      <div class="target">${targetLine(item, prefs)}</div>
+      <div class="target">${targetLine(item, prefs, circuit !== undefined)}</div>
       ${variant.hint ? `<p class="note">${escapeHtml(variant.hint)}</p>` : ''}
       <ul class="cues">${ex.cues.map((cue) => `<li>${escapeHtml(cue)}</li>`).join('')}</ul>
       ${loggedChips(item, prefs)}
       ${logger}
-      ${complete && (ex.kind !== 'emom' || timer !== 'emom') ? `<p class="done">✓ All ${item.prescription.sets} ${ex.kind === 'emom' ? 'rounds' : 'sets'} done.</p>` : ''}
+      ${circuit && complete ? `<p class="done">✓ Round ${circuit.round} logged.</p>` : ''}
+      ${!circuit && complete && (ex.kind !== 'emom' || timer !== 'emom') ? `<p class="done">✓ All ${item.prescription.sets} ${ex.kind === 'emom' ? 'rounds' : 'sets'} done.</p>` : ''}
       <div class="row adjust">
         <button type="button" class="link" data-action="easier">Too hard: easier</button>
-        ${item.logged.length > 0 ? '<button type="button" class="link" data-action="undo">Undo last set</button>' : ''}
+        ${(circuit ? complete : item.logged.length > 0) ? '<button type="button" class="link" data-action="undo">Undo last set</button>' : ''}
         <button type="button" class="link" data-action="harder">Too easy: harder</button>
       </div>
     </section>
     <nav class="player-nav">
       <button type="button" class="secondary" data-action="prev">◀ Back</button>
-      <button type="button" class="${complete ? '' : 'secondary'}" data-action="next">${last ? 'Finish' : complete ? 'Next exercise ▶' : 'Skip ▶'}</button>
+      <button type="button" class="${complete ? '' : 'secondary'}" data-action="next">${nextLabel}</button>
     </nav>
   `;
 }
 
-export function renderRest(endsAt: number, total: number, now: number): string {
+export function renderRest(endsAt: number, total: number, now: number, upNext: string | null = null): string {
   const left = Math.max(0, Math.ceil((endsAt - now) / 1000));
   return `
     <div class="rest" role="timer" aria-live="off">
       <div class="timer-label">Rest</div>
       <div class="timer-big" id="rest-left">${formatClock(left)}</div>
       <progress id="rest-bar" max="${total}" value="${total - left}"></progress>
+      ${upNext ? `<p class="up-next">Up next: <strong>${escapeHtml(upNext)}</strong></p>` : ''}
       <div class="row">
         <button type="button" class="secondary" data-action="rest-add">+15 s</button>
         <button type="button" data-action="rest-skip">Skip rest</button>
@@ -371,28 +454,74 @@ export function renderRest(endsAt: number, total: number, now: number): string {
   `;
 }
 
+/** Quick finisher: swings then plank, back to back, for 3 rounds. */
+export function renderFinisher(draft: Draft, base: string, input: InputState, timer: 'idle' | 'hold' | 'emom', activeIndex: number, now: number): string {
+  const circuit = draft.circuit;
+  const item = draft.exercises[activeIndex];
+  if (!circuit || !item) {
+    return '';
+  }
+  const ex = exercise(item.exercise);
+  const variant = findVariant(ex, item.variant);
+  const round = finisherRound(draft);
+  const isPlank = ex.kind === 'hold';
+  const elapsed = circuit.finisherStartedAt === null ? 0 : Math.max(0, (now - circuit.finisherStartedAt) / 1000);
+  const station = isPlank
+    ? timer === 'hold'
+      ? `<div class="timer"><div class="timer-big" id="hold-elapsed">0</div>
+          <p class="muted">Target ${input.value} s</p>
+          <button type="button" class="big" data-action="hold-stop">Plank done</button></div>`
+      : `<button type="button" class="big" data-action="hold-start">▶ Start ${input.value}-second plank</button>
+         ${stepper('value', input.value, 's')}`
+    : `${stepper('value', input.value, 'swings')}
+       <button type="button" class="big" data-action="log">Swings done → plank</button>`;
+  return `
+    <header class="player-head">
+      <button type="button" class="ghost" data-action="exit" aria-label="Leave workout">✕</button>
+      <span>Quick · Finisher</span>
+      <span class="clock" id="finisher-clock">${formatClock(elapsed)}</span>
+    </header>
+    <section class="card exercise">
+      <div class="timer-label">Round ${round} of ${circuit.finisherRounds} · ${isPlank ? 'plank' : 'swings'}</div>
+      ${renderDemo(variant.demo, base)}
+      <h2>${escapeHtml(isPlank ? `Plank ${QUICK_FINISHER.plankMin}–${QUICK_FINISHER.plankMax} s` : `${QUICK_FINISHER.swings} KB swings`)}</h2>
+      <p class="muted small">No rest: swings, straight into the plank, straight into the next round.</p>
+      <ul class="cues">${ex.cues.map((cue) => `<li>${escapeHtml(cue)}</li>`).join('')}</ul>
+      <div class="logger">${station}</div>
+    </section>
+    <nav class="player-nav">
+      <button type="button" class="secondary" data-action="prev">◀ Back</button>
+      <button type="button" class="secondary" data-action="finish">Finish now</button>
+    </nav>
+  `;
+}
+
 export function formatClock(seconds: number): string {
   const safe = Math.max(0, Math.round(seconds));
   return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, '0')}`;
 }
 
-export function renderFinish(draft: Draft, progressed: string[], pending: number, now: number): string {
+export function renderFinish(draft: Draft, progressed: Record<string, Change>, pending: number, now: number): string {
+  const earned = Object.keys(progressed);
   const minutes = Math.max(1, Math.round((now - draft.startedAt) / 60_000));
   const rows = draft.exercises.map((item) => {
     const ex = exercise(item.exercise);
     const values = item.logged.map((set) => (ex.kind === 'hold' ? set.seconds : set.reps) ?? 0);
     const total = values.reduce((sum, value) => sum + value, 0);
-    const up = progressed.includes(item.exercise) ? '<span class="badge up">↑ level up next time</span>' : '';
+    const change = progressed[item.exercise];
+    const up = change === undefined
+      ? ''
+      : `<span class="badge up">${change === 'rest-' ? '↑ shorter rest next time' : '↑ level up next time'}</span>`;
     return `<li><span>${escapeHtml(findVariant(ex, item.variant).name)} ${up}</span>
       <span class="muted">${values.length === 0 ? 'skipped' : `${escapeHtml(values.join(' · '))}${ex.kind === 'hold' ? ' s' : ''} = ${total}`}</span></li>`;
   }).join('');
   return `
     <section class="card finish">
-      <h2>🎉 Workout ${escapeHtml(draft.workout)} done</h2>
+      <h2>🎉 ${escapeHtml(workoutLabel(draft.workout))} done</h2>
       <p class="muted">${minutes} min · ${draft.exercises.reduce((sum, item) => sum + item.logged.length, 0)} sets</p>
-      ${progressed.length > 0 ? `<p class="note">Progression earned on ${progressed.length} exercise${progressed.length === 1 ? '' : 's'}. Next session will be a bit harder.</p>` : ''}
+      ${earned.length > 0 ? `<p class="note">Progression earned on ${earned.length} exercise${earned.length === 1 ? '' : 's'}. Next session will be a bit harder.</p>` : ''}
       <ol class="plan">${rows}</ol>
-      <p class="muted">${pending > 0 ? `${pending} sets are saved on this phone and will sync when you're online.` : 'Everything is saved.'}</p>
+      <p class="muted">${pending > 0 ? `${pending} ${pending === 1 ? 'set is' : 'sets are'} saved on this phone and will sync when you're online.` : 'Everything is saved.'}</p>
       <p class="tip">Now: protein-rich meal, water, and a walk later counts toward your steps.</p>
       <button type="button" class="big" data-action="close-finish">Done</button>
     </section>
@@ -400,11 +529,12 @@ export function renderFinish(draft: Draft, progressed: string[], pending: number
 }
 
 export function renderProgress(states: Record<string, ExerciseState>, prefs: Prefs): string {
-  const cards = Object.values(EXERCISES).map((ex) => {
+  const cards = Object.values(EXERCISES).filter((ex) => !ex.warmup).map((ex) => {
     const state = states[ex.id];
     if (!state) {
       return '';
     }
+    const quickRest = QUICK_POOL.includes(ex.id) ? ` · Quick rest ${state.quickRest} s` : '';
     const variant = findVariant(ex, state.variant);
     const history = state.history.slice(-12);
     const lastSession = history.at(-1);
@@ -428,7 +558,7 @@ export function renderProgress(states: Record<string, ExerciseState>, prefs: Pre
           <div class="spark-wrap">${sparkline(history.map((session) => session.total), { label: `${ex.name} total ${unit}` }) || '<span class="muted">Log two sessions to see a trend.</span>'}</div>
           ${lastSession ? `<div class="last"><strong>${lastSession.best}</strong> best · <strong>${lastSession.total}</strong> total<br /><small class="muted">${escapeHtml(formatDate(lastSession.date))}</small></div>` : ''}
         </div>
-        <p class="small">Next: ${state.sets} × ${state.target}${ex.kind === 'hold' ? ' s' : ''} (${ex.min}–${ex.max}) · ${escapeHtml(CHANGE_LABELS[state.change])}</p>
+        <p class="small">Next: ${state.sets} × ${state.target}${ex.kind === 'hold' ? ' s' : ''} (${ex.min}–${ex.max})${quickRest} · ${escapeHtml(CHANGE_LABELS[state.change])}</p>
         <div class="row adjust">
           <button type="button" class="link" data-action="override" data-exercise="${ex.id}" data-direction="-1">Easier</button>
           <button type="button" class="link" data-action="override" data-exercise="${ex.id}" data-direction="1">Harder</button>

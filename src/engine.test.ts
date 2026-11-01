@@ -185,3 +185,67 @@ describe('deloadStatus', () => {
     expect(deloadStatus(states, '2026-01-01', '2026-01-03', null)).toMatchObject({ due: true, reason: 'stalls' });
   });
 });
+
+describe('Quick sessions', () => {
+  function quick(date: string, exercise: string, variant: string, values: number[], rir = 2, band: number | null = null): LoggedSet[] {
+    return session(date, exercise, variant, values, rir, band).map((set) => ({ ...set, workout: 'Q' as const }));
+  }
+
+  it('shortens the circuit rest 90 → 75 → 60 → 45 before adding load', () => {
+    let sets: LoggedSet[] = [];
+    const rests: number[] = [];
+    for (const date of ['2026-01-01', '2026-01-03', '2026-01-05']) {
+      sets = [...sets, ...quick(date, 'squat', 'goblet-squat', [15, 15, 15])];
+      const state = replay(sets).squat!;
+      rests.push(state.quickRest);
+      expect(state).toMatchObject({ change: 'rest-', variant: 'goblet-squat', sets: 3 });
+    }
+    expect(rests).toEqual([75, 60, 45]);
+
+    sets = [...sets, ...quick('2026-01-07', 'squat', 'goblet-squat', [15, 15, 15])];
+    expect(replay(sets).squat).toMatchObject({ change: 'variant+', variant: 'goblet-squat-tempo', quickRest: 90 });
+  });
+
+  it('moves a band up at 45 s rest and starts the rest again', () => {
+    const sets = ['2026-01-01', '2026-01-03', '2026-01-05', '2026-01-07']
+      .flatMap((date) => quick(date, 'one-arm-row', 'one-arm-band-row', [20, 20, 20], 2, 2));
+    expect(replay(sets)['one-arm-row']).toMatchObject({ band: 3, change: 'band+', quickRest: 90 });
+  });
+
+  it('never adds A/B sets and is shared with A/B history', () => {
+    const sets = [
+      ...session('2026-01-01', 'squat', 'goblet-squat', [12, 12, 12]),
+      ...quick('2026-01-02', 'squat', 'goblet-squat', [15, 15, 15])
+    ];
+    const state = replay(sets).squat!;
+    expect(state).toMatchObject({ sets: 3, quickRest: 75 });
+    expect(state.history.map((summary) => summary.workout)).toEqual(['A', 'Q']);
+  });
+
+  it('keeps A and Q on the same day as separate sessions', () => {
+    const sets = [
+      ...session('2026-01-01', 'squat', 'goblet-squat', [12, 12, 12]),
+      ...quick('2026-01-01', 'squat', 'goblet-squat', [10, 10, 10])
+    ];
+    expect(replay(sets).squat!.history).toHaveLength(2);
+  });
+
+  it('logs the finisher for history only', () => {
+    const before = replay(session('2026-01-01', 'plank', 'plank', [45, 45], null).map((set) => ({ ...set, reps: null, seconds: 45 })));
+    const after = replay([
+      ...session('2026-01-01', 'plank', 'plank', [45, 45], null).map((set) => ({ ...set, reps: null, seconds: 45 })),
+      ...quick('2026-01-03', 'plank', 'plank', [0, 0, 0]).map((set) => ({ ...set, reps: null, seconds: 45 }))
+    ]);
+    expect(after.plank).toMatchObject({ change: before.plank!.change, variant: before.plank!.variant });
+    expect(after.plank!.history).toHaveLength(2);
+  });
+
+  it('a lighter A/B step resets the Quick rest', () => {
+    const sets = [
+      ...quick('2026-01-01', 'rdl', 'kb-rdl-tempo', [15, 15, 15]),
+      ...session('2026-01-03', 'rdl', 'kb-rdl-tempo', [9, 8, 6], 0),
+      ...session('2026-01-05', 'rdl', 'kb-rdl-tempo', [9, 8, 6], 0)
+    ];
+    expect(replay(sets).rdl).toMatchObject({ variant: 'kb-rdl', quickRest: 90 });
+  });
+});

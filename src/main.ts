@@ -22,7 +22,7 @@ import {
 } from '@alcariss/pwa-kit';
 import { alarm, keepScreenOn, tick, unlockAudio } from './cues';
 import { addDays, daysBetween } from './dates';
-import { adjust, deloadStatus, isProgression, replay, type ExerciseState, type LoggedSet } from './engine';
+import { adjust, deloadStatus, isProgression, replay, type Change, type ExerciseState, type LoggedSet } from './engine';
 import {
   setKey,
   toBody,
@@ -35,11 +35,24 @@ import {
   type SetRecord
 } from './model';
 import { DEFAULT_PREFS, normalizePrefs, type Prefs } from './prefs';
-import { BAND_LEVELS, exercise, findVariant, remoteDemoFrame, type DemoKey, type WorkoutId } from './program';
+import {
+  BAND_LEVELS,
+  exercise,
+  findVariant,
+  quickCircuit,
+  remoteDemoFrame,
+  type DemoKey,
+  type PlanId,
+  type WorkoutId
+} from './program';
 import { createQueue, createSlot } from './queue';
 import {
+  activeIndex,
+  circuitAdvance,
+  circuitBack,
   clampBand,
   createDraft,
+  finisherDone,
   isComplete,
   isDraft,
   logSet,
@@ -55,6 +68,7 @@ import {
   latestWeight,
   nextWorkout,
   proteinTarget,
+  quickSessionCount,
   rawWeights,
   sessionsThisWeek,
   trainingDays,
@@ -66,6 +80,7 @@ import {
   renderBody,
   renderExercise,
   renderFinish,
+  renderFinisher,
   renderNav,
   renderProgress,
   renderRest,
@@ -107,10 +122,10 @@ type State = {
   tab: Tab;
   draft: Draft | null;
   prefs: Prefs;
-  chosen: WorkoutId | null;
+  chosen: PlanId | null;
   input: InputState;
   timer: Timer;
-  progressed: string[];
+  progressed: Record<string, Change>;
   restBeep: number;
   tempoTick: number;
 };
@@ -124,7 +139,7 @@ const state: State = {
   chosen: null,
   input: { value: 0, rir: null, band: null },
   timer: { mode: 'idle' },
-  progressed: [],
+  progressed: {},
   restBeep: -1,
   tempoTick: -1
 };
@@ -334,6 +349,7 @@ function render(): void {
         today: date,
         next,
         chosen: state.chosen ?? next.workout,
+        quick: quickCircuit(quickSessionCount(days, date)),
         states: exerciseStates,
         deload,
         deloadUntil: state.prefs.deloadFrom === null ? null : addDays(state.prefs.deloadFrom, 6),
@@ -384,14 +400,20 @@ function render(): void {
 
 function currentItem(): DraftExercise | undefined {
   const draft = state.draft;
-  return draft ? draft.exercises[draft.step] : undefined;
+  return draft ? draft.exercises[activeIndex(draft)] : undefined;
+}
+
+function inFinisher(draft: Draft): boolean {
+  return draft.circuit !== undefined && draft.step === draft.circuit.size;
 }
 
 function renderPlayer(view: HTMLElement, draft: Draft): void {
   if (draft.step < 0) {
-    view.innerHTML = renderWarmup(draft);
+    view.innerHTML = renderWarmup(draft, BASE);
   } else if (draft.step >= draft.exercises.length) {
     view.innerHTML = renderFinish(draft, state.progressed, queue.size(), Date.now());
+  } else if (inFinisher(draft)) {
+    view.innerHTML = renderFinisher(draft, BASE, state.input, state.timer.mode, activeIndex(draft), Date.now());
   } else {
     view.innerHTML = renderExercise(draft, state.prefs, BASE, state.input, state.timer.mode);
   }
@@ -401,7 +423,16 @@ function renderPlayer(view: HTMLElement, draft: Draft): void {
 function renderRestLayer(): void {
   const layer = requiredElement('#rest-layer');
   const draft = state.draft;
-  layer.innerHTML = draft?.restEndsAt && inPlayer() ? renderRest(draft.restEndsAt, draft.restTotal, Date.now()) : '';
+  if (!draft?.restEndsAt || !inPlayer()) {
+    layer.innerHTML = '';
+    return;
+  }
+  // In the circuit the position has already moved on: show what comes next.
+  const next = draft.circuit ? currentItem() : undefined;
+  const upNext = draft.circuit
+    ? inFinisher(draft) ? 'Finisher: swings + plank' : next ? findVariant(exercise(next.exercise), next.variant).name : null
+    : null;
+  layer.innerHTML = renderRest(draft.restEndsAt, draft.restTotal, Date.now(), upNext);
 }
 
 function resetInput(): void {
@@ -425,18 +456,44 @@ function goToStep(step: number): void {
   }
   stopTimer();
   draft.step = Math.max(-1, Math.min(draft.exercises.length - 1, step));
+  enteredStep(draft);
   resetInput();
   saveDraft();
   render();
   window.scrollTo({ top: 0 });
 }
 
-function startWorkout(): void {
+/** Circuit navigation: next/previous exercise, round, or the finisher. */
+function moveCircuit(direction: 1 | -1): void {
+  const draft = state.draft;
+  if (!draft) {
+    return;
+  }
+  stopTimer();
+  if (direction === 1) {
+    circuitAdvance(draft);
+  } else {
+    circuitBack(draft);
+  }
+  enteredStep(draft);
+  resetInput();
+  saveDraft();
+  render();
+  window.scrollTo({ top: 0 });
+}
+
+function enteredStep(draft: Draft): void {
+  if (draft.circuit && inFinisher(draft) && draft.circuit.finisherStartedAt === null) {
+    draft.circuit.finisherStartedAt = Date.now();
+  }
+}
+
+function startWorkout(quick = false): void {
   unlockAudio();
   const exerciseStates = states();
   const days = sessionLog();
   const date = today();
-  const workout = state.chosen ?? nextWorkout(days, date).workout;
+  const workout: WorkoutId = quick ? 'Q' : state.chosen ?? nextWorkout(days, date).workout;
   const deload = deloadStatus(exerciseStates, days[0]?.date ?? null, date, state.prefs.deloadFrom);
   state.draft = createDraft({
     workout,
@@ -444,9 +501,10 @@ function startWorkout(): void {
     deload: deload.active,
     states: exerciseStates,
     sets: allSets(),
-    now: Date.now()
+    now: Date.now(),
+    quickCount: quickSessionCount(days, date)
   });
-  state.progressed = [];
+  state.progressed = {};
   saveDraft();
   location.hash = 'workout';
 }
@@ -474,7 +532,8 @@ function logCurrentSet(values?: { value: number; rir: number | null }): void {
     toast('Enter at least 1.', 'error');
     return;
   }
-  const set = logSet(draft, draft.step, {
+  const index = activeIndex(draft);
+  const set = logSet(draft, index, {
     reps: ex.kind === 'hold' ? null : value,
     seconds: ex.kind === 'hold' ? value : null,
     rir: ex.kind === 'reps' ? (values ? values.rir : state.input.rir) : null,
@@ -486,9 +545,14 @@ function logCurrentSet(values?: { value: number; rir: number | null }): void {
   const input = setInput(draft, item, set);
   queue.add(setKey(input), 'sets', input);
 
+  if (draft.circuit) {
+    logCircuitSet(draft, index, item);
+    return;
+  }
+
   const lastExercise = draft.step === draft.exercises.length - 1;
   if (ex.kind !== 'emom' && !(lastExercise && isComplete(item))) {
-    startRest(ex.restSeconds);
+    startRest(item.rest ?? ex.restSeconds);
   }
   saveDraft();
   if (ex.kind !== 'emom') {
@@ -497,6 +561,33 @@ function logCurrentSet(values?: { value: number; rir: number | null }): void {
   } else {
     setText('#emom-round', String(Math.min(item.prescription.sets, item.logged.length + 1)));
   }
+  void sync();
+}
+
+function logCircuitSet(draft: Draft, index: number, item: DraftExercise): void {
+  const circuit = draft.circuit;
+  if (!circuit) {
+    return;
+  }
+  if (index < circuit.size) {
+    // Exercise → rest → next exercise (or next round, or the finisher).
+    circuitAdvance(draft);
+    enteredStep(draft);
+    startRest(item.rest ?? exercise(item.exercise).restSeconds);
+  } else if (finisherDone(draft)) {
+    void sync();
+    finishWorkout();
+    return;
+  } else if (exercise(item.exercise).kind !== 'hold') {
+    // Swings done: the plank starts after a 3-second count-in.
+    state.timer = { mode: 'hold', startedAt: Date.now() + 3000, alerted: false, lastBeep: -1 };
+  } else {
+    stopTimer();
+  }
+  saveDraft();
+  resetInput();
+  render();
+  window.scrollTo({ top: 0 });
   void sync();
 }
 
@@ -544,12 +635,14 @@ function finishWorkout(): void {
   }
   savePrefs();
   const after = states();
-  state.progressed = draft.exercises
-    .filter((item) => {
-      const result = after[item.exercise];
-      return item.logged.length > 0 && result !== undefined && result.lastDate === draft.date && isProgression(result.change);
-    })
-    .map((item) => item.exercise);
+  const counted = draft.circuit ? draft.exercises.slice(0, draft.circuit.size) : draft.exercises;
+  state.progressed = {};
+  for (const item of counted) {
+    const result = after[item.exercise];
+    if (item.logged.length > 0 && result !== undefined && result.lastDate === draft.date && isProgression(result.change)) {
+      state.progressed[item.exercise] = result.change;
+    }
+  }
   saveDraft();
   render();
   window.scrollTo({ top: 0 });
@@ -615,6 +708,9 @@ function onTick(): void {
     return;
   }
   const now = Date.now();
+  if (draft.circuit?.finisherStartedAt != null && inFinisher(draft)) {
+    setText('#finisher-clock', formatClock((now - draft.circuit.finisherStartedAt) / 1000));
+  }
 
   if (draft.restEndsAt !== null) {
     const left = Math.ceil((draft.restEndsAt - now) / 1000);
@@ -691,7 +787,7 @@ function onTick(): void {
   }
 
   // Tempo metronome: one click per second, accented at the start of each rep.
-  const item = draft.exercises[draft.step];
+  const item = currentItem();
   if (state.prefs.tempoCue && item) {
     const ex = exercise(item.exercise);
     const tempo = findVariant(ex, item.variant).tempo;
@@ -717,6 +813,14 @@ async function onAction(event: Event): Promise<void> {
   switch (button.dataset.action) {
     case 'start':
       startWorkout();
+      break;
+    case 'start-quick':
+      startWorkout(true);
+      break;
+    case 'finish':
+      if (confirm('Finish the workout now?')) {
+        finishWorkout();
+      }
       break;
     case 'resume':
       unlockAudio();
@@ -748,7 +852,9 @@ async function onAction(event: Event): Promise<void> {
       break;
     case 'next':
       unlockAudio();
-      if (draft) {
+      if (draft?.circuit) {
+        moveCircuit(1);
+      } else if (draft) {
         if (draft.step === draft.exercises.length - 1) {
           finishWorkout();
         } else {
@@ -757,7 +863,9 @@ async function onAction(event: Event): Promise<void> {
       }
       break;
     case 'prev':
-      if (draft) {
+      if (draft?.circuit) {
+        moveCircuit(-1);
+      } else if (draft) {
         goToStep(draft.step - 1);
       }
       break;
