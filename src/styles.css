@@ -159,6 +159,25 @@ button.ghost {
   padding: 0.4rem;
 }
 
+/* Metronome beat: the ♩ button flashes, so the tempo works without sound. */
+button.ghost.pulse {
+  animation: beat 0.35s ease-out;
+}
+
+button.ghost.pulse.accent {
+  animation-name: beat-accent;
+}
+
+@keyframes beat {
+  from { background: rgba(249, 115, 22, 0.45); }
+  to { background: transparent; }
+}
+
+@keyframes beat-accent {
+  from { background: var(--accent); color: var(--accent-text); }
+  to { background: transparent; }
+}
+
 button.ghost.on {
   color: var(--accent);
 }

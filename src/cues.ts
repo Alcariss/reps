@@ -1,40 +1,33 @@
 /** Beeps, vibration and the screen wake lock used during a workout. */
 
-let audio: AudioContext | null = null;
 
-function context(): AudioContext | null {
+import { createAudioEngine, usePlaybackSession, type AudioContextLike } from './audio';
+
+const audio = createAudioEngine(() => {
   const scope = window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext };
   const Ctor = scope.AudioContext ?? scope.webkitAudioContext;
-  if (!Ctor) {
-    return null;
-  }
-  audio ??= new Ctor();
-  if (audio.state === 'suspended') {
-    void audio.resume();
-  }
-  return audio;
+  return Ctor ? (new Ctor() as unknown as AudioContextLike) : null;
+});
+
+usePlaybackSession(navigator);
+// iOS only lets a gesture start audio; any tap anywhere counts. Kept for the
+// app's lifetime because iOS can interrupt the context again later.
+for (const type of ['pointerdown', 'touchend'] as const) {
+  document.addEventListener(type, () => audio.unlock(), { capture: true, passive: true });
 }
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    void audio.wake();
+  }
+});
 
 /** Call from a click handler: iOS only allows audio that a gesture unlocked. */
 export function unlockAudio(): void {
-  context();
+  audio.unlock();
 }
 
 export function beep(options: { frequency?: number; duration?: number; volume?: number } = {}): void {
-  const ctx = context();
-  if (!ctx) {
-    return;
-  }
-  const oscillator = ctx.createOscillator();
-  const gain = ctx.createGain();
-  const duration = options.duration ?? 0.15;
-  oscillator.type = 'sine';
-  oscillator.frequency.value = options.frequency ?? 880;
-  gain.gain.setValueAtTime(options.volume ?? 0.3, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
-  oscillator.connect(gain).connect(ctx.destination);
-  oscillator.start();
-  oscillator.stop(ctx.currentTime + duration);
+  audio.play({ frequency: options.frequency ?? 880, duration: options.duration ?? 0.15, volume: options.volume ?? 0.3 });
 }
 
 export function vibrate(pattern: number | number[]): void {
