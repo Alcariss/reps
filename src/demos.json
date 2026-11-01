@@ -1,0 +1,16 @@
+{
+  "goblet-squat": "Goblet_Squat",
+  "rdl": "Romanian_Deadlift",
+  "single-leg-rdl": "Kettlebell_One-Legged_Deadlift",
+  "incline-pushup": "Incline_Push-Up",
+  "pushup": "Pushups",
+  "feet-elevated-pushup": "Push-Ups_With_Feet_Elevated",
+  "row": "Bent_Over_Two-Dumbbell_Row",
+  "swing": "One-Arm_Kettlebell_Swings",
+  "press": "Two-Arm_Kettlebell_Military_Press",
+  "split-squat": "Split_Squats",
+  "pull-apart": "Band_Pull_Apart",
+  "face-pull": "Face_Pull",
+  "dead-bug": "Dead_Bug",
+  "plank": "Plank"
+}
