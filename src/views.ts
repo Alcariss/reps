@@ -247,8 +247,8 @@ function renderQuickWarmup(draft: Draft, base: string): string {
           </li>`;
         }).join('')}
       </ul>
-      <button type="button" class="big ${done ? '' : 'secondary'}" data-action="next">${done ? 'Start round 1' : 'Skip warm-up'}</button>
     </section>
+    ${playerBar({ action: 'next', label: done ? 'Start round 1 ▶' : 'Warm-up done ▶' }, { back: false })}
   `;
 }
 
@@ -272,8 +272,8 @@ export function renderWarmup(draft: Draft, base: string): string {
             <span class="box" aria-hidden="true">${draft.warmup[index] ? '✓' : ''}</span>${escapeHtml(item)}
           </button></li>`).join('')}
       </ul>
-      <button type="button" class="big ${done ? '' : 'secondary'}" data-action="next">${done ? 'Start first exercise' : 'Skip warm-up'}</button>
     </section>
+    ${playerBar({ action: 'next', label: done ? 'Start first exercise ▶' : 'Warm-up done ▶' }, { back: false })}
   `;
 }
 
@@ -289,7 +289,7 @@ function targetLine(item: DraftExercise, prefs: Prefs, circuit: boolean): string
   if (variant.tempo) {
     parts.push(`tempo ${variant.tempo}`);
   }
-  if (ex.kind !== 'emom') {
+  if (ex.kind === 'reps') {
     parts.push(p.rir);
   }
   if (variant.banded && item.band !== null) {
@@ -309,6 +309,48 @@ function loggedChips(item: DraftExercise, prefs: Prefs): string {
     const band = set.band === null ? '' : ` · L${set.band}`;
     return `<li title="${escapeHtml(bandLabel(prefs, set.band))}">${escapeHtml(value + rir + band)}</li>`;
   }).join('')}</ol>`;
+}
+
+type BarAction = { action: string; label: string; secondary?: boolean };
+
+/**
+ * The fixed bottom bar of the player. The primary action (log, start timer,
+ * next) is always here, so it never sits below the fold.
+ */
+function playerBar(primary: BarAction, options: { back?: boolean; extra?: BarAction | null } = {}): string {
+  const back = options.back === false
+    ? ''
+    : '<button type="button" class="secondary bar-back" data-action="prev" aria-label="Back">◀</button>';
+  const extra = options.extra
+    ? `<button type="button" class="secondary bar-extra" data-action="${escapeHtml(options.extra.action)}">${escapeHtml(options.extra.label)}</button>`
+    : '';
+  return `
+    <nav class="player-nav">
+      ${back}
+      <button type="button" class="bar-primary ${primary.secondary ? 'secondary' : ''}" data-action="${escapeHtml(primary.action)}">${escapeHtml(primary.label)}</button>
+      ${extra}
+    </nav>
+  `;
+}
+
+function cuesBox(cues: readonly string[], hint: string | undefined): string {
+  return `
+    <details class="cues-box" open>
+      <summary>Form cues</summary>
+      ${hint ? `<p class="note">${escapeHtml(hint)}</p>` : ''}
+      <ul class="cues">${cues.map((cue) => `<li>${escapeHtml(cue)}</li>`).join('')}</ul>
+    </details>
+  `;
+}
+
+/** Title and badges beside a small demo; tap the demo to enlarge it. */
+function exerciseTop(demo: DemoKey, base: string, title: string, extra: string): string {
+  return `
+    <div class="ex-top">
+      <div class="ex-title"><h2>${escapeHtml(title)}</h2>${extra}</div>
+      <button type="button" class="demo-button" data-action="zoom-demo" aria-label="Enlarge demo">${renderDemo(demo, base)}</button>
+    </div>
+  `;
 }
 
 export type InputState = { value: number; rir: number | null; band: number | null };
@@ -367,7 +409,8 @@ export function renderExercise(draft: Draft, prefs: Prefs, base: string, input: 
   const position = circuit
     ? `Quick · Round ${circuit.round}/${circuit.rounds} · ${index + 1}/${circuit.size}`
     : `Workout ${draft.workout} · ${index + 1}/${draft.exercises.length}`;
-  const nextLabel = lastInCircuit ? 'Finisher ▶' : last ? 'Finish' : complete ? (circuit ? 'Next ▶' : 'Next exercise ▶') : 'Skip ▶';
+  const nextLabel = lastInCircuit ? 'Finisher ▶' : last ? 'Finish ✓' : circuit ? 'Next ▶' : 'Next exercise ▶';
+  const skip: BarAction = { action: 'next', label: lastInCircuit ? 'Skip' : last ? 'End' : 'Skip' };
   const change = item.change === 'start' || item.change === 'none'
     ? ''
     : `<span class="badge ${isProgression(item.change) ? 'up' : item.change.endsWith('-') || item.change === 'repeat' ? 'down' : ''}">${escapeHtml(CHANGE_LABELS[item.change])}</span>`;
@@ -379,22 +422,19 @@ export function renderExercise(draft: Draft, prefs: Prefs, base: string, input: 
           <div class="timer-label">Round <strong id="emom-round">1</strong> / ${item.prescription.sets}</div>
           <div class="timer-big" id="emom-left">60</div>
           <p class="muted">${input.value} swings at the top of each minute, rest the remainder.</p>
-          <button type="button" class="secondary" data-action="emom-stop">Stop early</button>
         </div>`
       : complete
         ? ''
         : `<div class="logger">
             <p class="muted">Every minute on the minute: do the swings, rest until the beep. Rounds are logged automatically.</p>
             ${stepper('value', input.value, 'reps / min')}
-            <button type="button" class="big" data-action="emom-start">Start ${item.prescription.sets}-min EMOM</button>
           </div>`;
   } else if (!complete) {
     const holdTimer = ex.kind === 'hold'
       ? timer === 'hold'
         ? `<div class="timer"><div class="timer-big" id="hold-elapsed">0</div>
-            <p class="muted">Target ${input.value} s</p>
-            <button type="button" class="big" data-action="hold-stop">Stop</button></div>`
-        : `<button type="button" class="secondary" data-action="hold-start">▶ Start ${input.value}-second hold</button>`
+            <p class="muted">Target ${input.value} s</p></div>`
+        : ''
       : '';
     logger = `
       <div class="logger">
@@ -403,9 +443,24 @@ export function renderExercise(draft: Draft, prefs: Prefs, base: string, input: 
         ${stepper('value', input.value, unitLabel(ex, variant))}
         ${ex.kind === 'reps' ? rirPicker(input.rir, ex.rirFloor) : ''}
         ${variant.banded && input.band !== null ? bandPicker(prefs, input.band) : ''}
-        <button type="button" class="big" data-action="log">${escapeHtml(logLabel)}</button>
+        ${ex.kind === 'hold' && timer !== 'hold' ? `<button type="button" class="secondary" data-action="log">Log ${input.value} s without the timer</button>` : ''}
       </div>
     `;
+  }
+
+  let primary: BarAction;
+  if (complete && timer !== 'emom') {
+    primary = { action: 'next', label: nextLabel };
+  } else if (ex.kind === 'emom') {
+    primary = timer === 'emom'
+      ? { action: 'emom-stop', label: 'Stop EMOM', secondary: true }
+      : { action: 'emom-start', label: '▶ Start EMOM' };
+  } else if (ex.kind === 'hold') {
+    primary = timer === 'hold'
+      ? { action: 'hold-stop', label: 'Stop & log ✓' }
+      : { action: 'hold-start', label: `▶ Start ${input.value} s hold` };
+  } else {
+    primary = { action: 'log', label: `${logLabel} ✓` };
   }
 
   return `
@@ -415,14 +470,10 @@ export function renderExercise(draft: Draft, prefs: Prefs, base: string, input: 
       <button type="button" class="ghost ${prefs.tempoCue ? 'on' : ''}" data-action="tempo" aria-pressed="${prefs.tempoCue ? 'true' : 'false'}" title="Tempo metronome">♩</button>
     </header>
     <section class="card exercise">
-      ${renderDemo(variant.demo, base)}
-      <h2>${escapeHtml(variant.name)}</h2>
-      ${change}
+      ${exerciseTop(variant.demo, base, variant.name, change)}
       <div class="target">${targetLine(item, prefs, circuit !== undefined)}</div>
-      ${variant.hint ? `<p class="note">${escapeHtml(variant.hint)}</p>` : ''}
-      <ul class="cues">${ex.cues.map((cue) => `<li>${escapeHtml(cue)}</li>`).join('')}</ul>
-      ${loggedChips(item, prefs)}
       ${logger}
+      ${loggedChips(item, prefs)}
       ${circuit && complete ? `<p class="done">✓ Round ${circuit.round} logged.</p>` : ''}
       ${!circuit && complete && (ex.kind !== 'emom' || timer !== 'emom') ? `<p class="done">✓ All ${item.prescription.sets} ${ex.kind === 'emom' ? 'rounds' : 'sets'} done.</p>` : ''}
       <div class="row adjust">
@@ -430,11 +481,9 @@ export function renderExercise(draft: Draft, prefs: Prefs, base: string, input: 
         ${(circuit ? complete : item.logged.length > 0) ? '<button type="button" class="link" data-action="undo">Undo last set</button>' : ''}
         <button type="button" class="link" data-action="harder">Too easy: harder</button>
       </div>
+      ${cuesBox(ex.cues, variant.hint)}
     </section>
-    <nav class="player-nav">
-      <button type="button" class="secondary" data-action="prev">◀ Back</button>
-      <button type="button" class="${complete ? '' : 'secondary'}" data-action="next">${nextLabel}</button>
-    </nav>
+    ${playerBar(primary, { extra: complete && timer !== 'emom' ? null : skip })}
   `;
 }
 
@@ -466,15 +515,15 @@ export function renderFinisher(draft: Draft, base: string, input: InputState, ti
   const round = finisherRound(draft);
   const isPlank = ex.kind === 'hold';
   const elapsed = circuit.finisherStartedAt === null ? 0 : Math.max(0, (now - circuit.finisherStartedAt) / 1000);
-  const station = isPlank
+  const station = isPlank && timer === 'hold'
+    ? `<div class="timer"><div class="timer-big" id="hold-elapsed">0</div>
+        <p class="muted">Target ${input.value} s</p></div>`
+    : stepper('value', input.value, isPlank ? 's' : 'swings');
+  const primary: BarAction = isPlank
     ? timer === 'hold'
-      ? `<div class="timer"><div class="timer-big" id="hold-elapsed">0</div>
-          <p class="muted">Target ${input.value} s</p>
-          <button type="button" class="big" data-action="hold-stop">Plank done</button></div>`
-      : `<button type="button" class="big" data-action="hold-start">▶ Start ${input.value}-second plank</button>
-         ${stepper('value', input.value, 's')}`
-    : `${stepper('value', input.value, 'swings')}
-       <button type="button" class="big" data-action="log">Swings done → plank</button>`;
+      ? { action: 'hold-stop', label: 'Plank done ✓' }
+      : { action: 'hold-start', label: `▶ Start ${input.value} s plank` }
+    : { action: 'log', label: 'Swings done ✓' };
   return `
     <header class="player-head">
       <button type="button" class="ghost" data-action="exit" aria-label="Leave workout">✕</button>
@@ -483,16 +532,12 @@ export function renderFinisher(draft: Draft, base: string, input: InputState, ti
     </header>
     <section class="card exercise">
       <div class="timer-label">Round ${round} of ${circuit.finisherRounds} · ${isPlank ? 'plank' : 'swings'}</div>
-      ${renderDemo(variant.demo, base)}
-      <h2>${escapeHtml(isPlank ? `Plank ${QUICK_FINISHER.plankMin}–${QUICK_FINISHER.plankMax} s` : `${QUICK_FINISHER.swings} KB swings`)}</h2>
+      ${exerciseTop(variant.demo, base, isPlank ? `Plank ${QUICK_FINISHER.plankMin}–${QUICK_FINISHER.plankMax} s` : `${QUICK_FINISHER.swings} KB swings`, '')}
       <p class="muted small">No rest: swings, straight into the plank, straight into the next round.</p>
-      <ul class="cues">${ex.cues.map((cue) => `<li>${escapeHtml(cue)}</li>`).join('')}</ul>
       <div class="logger">${station}</div>
+      ${cuesBox(ex.cues, undefined)}
     </section>
-    <nav class="player-nav">
-      <button type="button" class="secondary" data-action="prev">◀ Back</button>
-      <button type="button" class="secondary" data-action="finish">Finish now</button>
-    </nav>
+    ${playerBar(primary, { extra: { action: 'finish', label: 'End' } })}
   `;
 }
 
@@ -523,8 +568,8 @@ export function renderFinish(draft: Draft, progressed: Record<string, Change>, p
       <ol class="plan">${rows}</ol>
       <p class="muted">${pending > 0 ? `${pending} ${pending === 1 ? 'set is' : 'sets are'} saved on this phone and will sync when you're online.` : 'Everything is saved.'}</p>
       <p class="tip">Now: protein-rich meal, water, and a walk later counts toward your steps.</p>
-      <button type="button" class="big" data-action="close-finish">Done</button>
     </section>
+    ${playerBar({ action: 'close-finish', label: 'Done ✓' }, { back: false })}
   `;
 }
 

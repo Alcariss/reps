@@ -947,6 +947,9 @@ async function onAction(event: Event): Promise<void> {
       stopTimer();
       render();
       break;
+    case 'zoom-demo':
+      button.closest('.ex-top')?.classList.toggle('zoomed');
+      break;
     case 'close-finish':
       closeWorkout();
       break;
