@@ -22,6 +22,7 @@ import {
 } from '@alcariss/pwa-kit';
 import { alarm, keepScreenOn, tick, unlockAudio } from './cues';
 import { addDays, daysBetween } from './dates';
+import { startDemoLoop } from './demo-loop';
 import { adjust, deloadStatus, isProgression, replay, type Change, type ExerciseState, type LoggedSet } from './engine';
 import {
   setKey,
@@ -109,6 +110,7 @@ const queue = createQueue<SetInput | BodyInput>('reps:v1:queue');
 const draftSlot = createSlot<Draft>('reps:v1:draft');
 const prefsSlot = createSlot<Prefs>('reps:v1:prefs');
 const root = requiredElement('#app');
+const demos = startDemoLoop(root);
 const signInRequired = config.authProviders.length > 0;
 
 type Timer =
@@ -946,6 +948,9 @@ async function onAction(event: Event): Promise<void> {
     case 'emom-stop':
       stopTimer();
       render();
+      break;
+    case 'demo-toggle':
+      demos.toggle();
       break;
     case 'zoom-demo':
       button.closest('.ex-top')?.classList.toggle('zoomed');

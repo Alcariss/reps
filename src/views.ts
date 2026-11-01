@@ -61,10 +61,10 @@ export function renderNav(active: Tab): string {
 export function renderDemo(key: DemoKey, base: string): string {
   const [first, second] = demoFrames(key, base);
   return `
-    <div class="demo" aria-hidden="true">
+    <button type="button" class="demo" data-action="demo-toggle" data-show="0" aria-pressed="false" aria-label="Pause or play the demo">
       <img src="${escapeHtml(first)}" data-demo="${escapeHtml(key)}" data-frame="0" alt="" decoding="async" />
       <img src="${escapeHtml(second)}" data-demo="${escapeHtml(key)}" data-frame="1" alt="" decoding="async" class="demo-b" />
-    </div>
+    </button>
   `;
 }
 
@@ -343,12 +343,15 @@ function cuesBox(cues: readonly string[], hint: string | undefined): string {
   `;
 }
 
-/** Title and badges beside a small demo; tap the demo to enlarge it. */
+/** Title and badges beside a small demo; tap it to pause, ⤢ to enlarge. */
 function exerciseTop(demo: DemoKey, base: string, title: string, extra: string): string {
   return `
     <div class="ex-top">
       <div class="ex-title"><h2>${escapeHtml(title)}</h2>${extra}</div>
-      <button type="button" class="demo-button" data-action="zoom-demo" aria-label="Enlarge demo">${renderDemo(demo, base)}</button>
+      <div class="demo-wrap">
+        ${renderDemo(demo, base)}
+        <button type="button" class="zoom-button" data-action="zoom-demo" aria-label="Enlarge or shrink the demo">⤢</button>
+      </div>
     </div>
   `;
 }
