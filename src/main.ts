@@ -798,9 +798,22 @@ function onTick(): void {
       const second = Math.floor(now / 1000);
       if (second !== state.tempoTick) {
         state.tempoTick = second;
-        tick(signals(), second % cycle === 0);
+        tempoBeat(second % cycle === 0);
       }
     }
+  }
+}
+
+/** One metronome beat: a click (if sound is on) and a flash of the ♩ button. */
+function tempoBeat(accent: boolean): void {
+  tick(signals(), accent);
+  const button = document.querySelector<HTMLElement>('[data-action="tempo"]');
+  if (button) {
+    button.classList.remove('pulse', 'accent');
+    // Reflow so the animation restarts on every beat.
+    void button.offsetWidth;
+    button.classList.add('pulse');
+    button.classList.toggle('accent', accent);
   }
 }
 
@@ -908,6 +921,11 @@ async function onAction(event: Event): Promise<void> {
       state.prefs.tempoCue = !state.prefs.tempoCue;
       savePrefs();
       render();
+      if (state.prefs.tempoCue) {
+        // Immediate confirmation; the regular beat starts on the next second.
+        state.tempoTick = Math.floor(Date.now() / 1000);
+        tempoBeat(true);
+      }
       break;
     case 'rest-add':
       if (draft?.restEndsAt) {
