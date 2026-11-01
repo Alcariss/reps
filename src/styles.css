@@ -784,3 +784,29 @@ details summary {
   background: #fecaca;
   color: #7f1d1d;
 }
+
+/* Quick circuit */
+.howto summary {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.3rem 0 0.2rem 2.6rem;
+}
+
+.howto .demo {
+  margin: 0.4rem 0;
+}
+
+.up-next {
+  color: var(--muted);
+  font-size: 1.1rem;
+}
+
+.up-next strong {
+  color: var(--text);
+}
+
+.clock {
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}

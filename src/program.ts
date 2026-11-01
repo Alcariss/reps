@@ -5,7 +5,9 @@ import demoNames from './demos.json';
  * alternating full-body workouts. Pure data, no DOM.
  */
 
-export type WorkoutId = 'A' | 'B';
+/** A and B are the full plan; Q is the 20–25 min Quick circuit. */
+export type WorkoutId = 'A' | 'B' | 'Q';
+export type PlanId = 'A' | 'B';
 export type ExerciseKind = 'reps' | 'hold' | 'emom';
 export type Muscle = 'legs' | 'hinge' | 'push' | 'pull' | 'core' | 'conditioning';
 export type DemoKey = keyof typeof demoNames;
@@ -45,6 +47,8 @@ export type Exercise = {
   ladder: Variant[];
   /** Variant a new user starts on. */
   start: string;
+  /** Warm-up movement only: shown with a demo, never logged or progressed. */
+  warmup?: boolean;
 };
 
 export const BAND_LEVELS = 6;
@@ -289,6 +293,128 @@ export const EXERCISES: Record<string, Exercise> = {
     ],
     start: 'dead-bug'
   },
+  'one-arm-row': {
+    id: 'one-arm-row',
+    name: 'Single-arm band row',
+    kind: 'reps',
+    muscle: 'pull',
+    main: true,
+    sets: 3,
+    maxSets: 4,
+    min: 10,
+    max: 20,
+    restSeconds: 90,
+    rirFloor: 0,
+    usesBand: true,
+    cues: [
+      'Band under the opposite foot, staggered stance, flat back',
+      'Pull the elbow back past the ribs, not out to the side',
+      'Squeeze the shoulder blade back and down at the top',
+      '2–3 s return, no torso twist'
+    ],
+    ladder: [
+      { id: 'one-arm-band-row', name: 'Single-arm band row', demo: 'one-arm-row', perSide: true, banded: true, tempo: '1-1-3' },
+      { id: 'one-arm-band-row-squeeze', name: 'Single-arm band row, 2 s squeeze', demo: 'one-arm-row', perSide: true, banded: true, tempo: '1-2-3' },
+      { id: 'one-arm-kb-row', name: 'One-arm 16 kg KB row', demo: 'one-arm-row', perSide: true, tempo: '1-1-3', hint: 'Free hand on a chair or knee for support.' }
+    ],
+    start: 'one-arm-band-row'
+  },
+  'band-press': {
+    id: 'band-press',
+    name: 'Single-arm band overhead press',
+    kind: 'reps',
+    muscle: 'push',
+    main: true,
+    sets: 3,
+    maxSets: 4,
+    min: 8,
+    max: 15,
+    restSeconds: 90,
+    rirFloor: 1,
+    usesBand: true,
+    cues: [
+      'Band under the same-side foot, hand at the shoulder',
+      'Glutes tight, ribs down, no leaning back',
+      'Press straight up, bicep by the ear',
+      'Lower slowly against the band'
+    ],
+    ladder: [
+      { id: 'one-arm-band-press', name: 'Single-arm band overhead press', demo: 'band-press', perSide: true, banded: true, tempo: '2-0-1' },
+      { id: 'one-arm-band-press-pause', name: 'Band overhead press, 2 s hold at the top', demo: 'band-press', perSide: true, banded: true, tempo: '3-2-1' }
+    ],
+    start: 'one-arm-band-press'
+  },
+  'floor-press': {
+    id: 'floor-press',
+    name: 'KB floor press',
+    kind: 'reps',
+    muscle: 'push',
+    main: true,
+    sets: 3,
+    maxSets: 4,
+    min: 8,
+    max: 12,
+    restSeconds: 90,
+    rirFloor: 1,
+    usesBand: false,
+    cues: [
+      'Lie on your back, knees bent, KB in the rack, wrist straight',
+      'Elbow about 45° from the body',
+      'Lower until the upper arm touches the floor, pause softly',
+      'Press straight up over the shoulder'
+    ],
+    ladder: [
+      { id: 'kb-floor-press', name: 'One-arm KB floor press', demo: 'floor-press', perSide: true, tempo: '2-1-1' },
+      { id: 'kb-floor-press-tempo', name: 'KB floor press, 3 s down + 2 s pause', demo: 'floor-press', perSide: true, tempo: '3-2-1' },
+      { id: 'kb-floor-press-legs-up', name: 'KB floor press, legs straight (no leg drive)', demo: 'floor-press', perSide: true, tempo: '3-1-1' }
+    ],
+    start: 'kb-floor-press'
+  },
+  'band-good-morning': {
+    id: 'band-good-morning',
+    name: 'Band good morning',
+    kind: 'reps',
+    muscle: 'hinge',
+    main: false,
+    sets: 1,
+    maxSets: 1,
+    min: 10,
+    max: 10,
+    restSeconds: 0,
+    rirFloor: 3,
+    usesBand: true,
+    cues: [
+      'Medium band under the feet and behind the neck',
+      'Soft knees, push the hips back, flat back',
+      'Stop at the hamstring stretch, stand tall by squeezing glutes'
+    ],
+    ladder: [{ id: 'band-good-morning', name: 'Band good morning', demo: 'good-morning' }],
+    start: 'band-good-morning',
+    warmup: true
+  },
+  'worlds-greatest-stretch': {
+    id: 'worlds-greatest-stretch',
+    name: 'World’s greatest stretch',
+    kind: 'reps',
+    muscle: 'core',
+    main: false,
+    sets: 1,
+    maxSets: 1,
+    min: 4,
+    max: 4,
+    restSeconds: 0,
+    rirFloor: 3,
+    usesBand: false,
+    cues: [
+      'Long lunge, back knee off the floor',
+      'Same-side elbow down toward the instep',
+      'Rotate and reach that arm to the ceiling, eyes follow the hand',
+      'Slow, breathe out into each position'
+    ],
+    ladder: [{ id: 'worlds-greatest-stretch', name: 'World’s greatest stretch', demo: 'worlds-greatest-stretch', perSide: true }],
+    start: 'worlds-greatest-stretch',
+    warmup: true
+  },
   swing: {
     id: 'swing',
     name: 'KB swing EMOM',
@@ -341,10 +467,38 @@ export const EXERCISES: Record<string, Exercise> = {
   }
 };
 
-export const WORKOUTS: Record<WorkoutId, readonly string[]> = {
+export const WORKOUTS: Record<PlanId, readonly string[]> = {
   A: ['squat', 'pushup', 'row', 'rdl', 'pull-apart', 'dead-bug', 'scap-pushup'],
   B: ['split-squat', 'rdl', 'press', 'row', 'pushup', 'swing', 'plank']
 };
+
+/**
+ * Quick: a 20–25 min circuit for busy days. Same exercise ids as A/B, so
+ * history and ladders are shared; only rest and rounds differ.
+ */
+export const QUICK_ROUNDS = 3;
+export const QUICK_REST_STEPS: readonly number[] = [90, 75, 60, 45];
+export const QUICK_FINISHER = { rounds: 3, swing: 'swing', swings: 15, plank: 'plank', plankMin: 30, plankMax: 45 } as const;
+export const QUICK_WARMUP: readonly { exercise: string; amount: string }[] = [
+  { exercise: 'pull-apart', amount: '15, light band' },
+  { exercise: 'worlds-greatest-stretch', amount: '4 per side' },
+  { exercise: 'band-good-morning', amount: '10, medium band' }
+];
+/** Exercises the Quick circuit can contain, for the Progress tab. */
+export const QUICK_POOL: readonly string[] = ['squat', 'rdl', 'pushup', 'floor-press', 'band-press', 'one-arm-row'];
+
+/**
+ * The 4-exercise circuit. Every second Quick session swaps the push-up for a
+ * press, alternating KB floor press and band overhead press.
+ */
+export function quickCircuit(previousQuickSessions: number): string[] {
+  const slot = previousQuickSessions % 2 === 0 ? 'pushup' : previousQuickSessions % 4 === 1 ? 'floor-press' : 'band-press';
+  return ['squat', 'rdl', slot, 'one-arm-row'];
+}
+
+export function nextQuickRest(rest: number): number {
+  return QUICK_REST_STEPS.find((step) => step < rest) ?? QUICK_REST_STEPS.at(-1)!;
+}
 
 export const WARMUP: readonly string[] = [
   '1–2 min easy movement (march, arm circles, jumping jacks)',
@@ -370,7 +524,7 @@ export function findVariant(ex: Exercise, variantId: string): Variant {
   return ex.ladder[variantIndex(ex, variantId)] ?? ex.ladder[0]!;
 }
 
-export function otherWorkout(workout: WorkoutId): WorkoutId {
+export function otherWorkout(workout: PlanId): PlanId {
   return workout === 'A' ? 'B' : 'A';
 }
 

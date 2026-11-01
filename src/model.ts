@@ -75,7 +75,7 @@ export function toSet(row: unknown): SetRecord {
   return {
     id: requireId(record, 'Set'),
     date: text(record, 'date'),
-    workout: workout === 'B' ? 'B' : 'A',
+    workout: workout === 'B' || workout === 'Q' ? workout : 'A',
     exercise: text(record, 'exercise'),
     variant: text(record, 'variant'),
     setNumber: numberOrNull(record, 'setNumber') ?? 1,
@@ -129,7 +129,7 @@ export function toBodyParams(input: BodyInput): RequestParams {
   };
 }
 
-/** A logged set is identified by its day, exercise and set number. */
-export function setKey(input: Pick<SetInput, 'date' | 'exercise' | 'setNumber'>): string {
-  return `${input.date}|${input.exercise}|${input.setNumber}`;
+/** A logged set is identified by its day, workout, exercise and set number. */
+export function setKey(input: Pick<SetInput, 'date' | 'workout' | 'exercise' | 'setNumber'>): string {
+  return `${input.date}|${input.workout}|${input.exercise}|${input.setNumber}`;
 }

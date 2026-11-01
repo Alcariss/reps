@@ -4,6 +4,7 @@ import {
   averageWeight,
   nextWorkout,
   proteinTarget,
+  quickSessionCount,
   rollingAverage,
   sessionsThisWeek,
   trainingDays,
@@ -34,6 +35,19 @@ describe('training days', () => {
     expect(nextWorkout(days, '2026-11-05')).toEqual({ workout: 'A', daysSince: 1, restSuggested: true, trainedToday: false });
     expect(nextWorkout(days, '2026-11-06')).toMatchObject({ workout: 'A', daysSince: 2, restSuggested: false });
     expect(nextWorkout([], '2026-11-06')).toMatchObject({ workout: 'A', daysSince: null });
+  });
+
+  it('keeps A/B alternating around Quick sessions', () => {
+    const days = trainingDays([...sets, { date: '2026-11-06', workout: 'Q' }]);
+    expect(nextWorkout(days, '2026-11-07')).toMatchObject({ workout: 'A', daysSince: 1 });
+    expect(quickSessionCount(days, '2026-11-06')).toBe(1);
+    expect(quickSessionCount(days, '2026-11-05')).toBe(0);
+  });
+
+  it('keeps two workouts on one day as two sessions but one training day', () => {
+    const days = trainingDays([...sets, { date: '2026-11-04', workout: 'Q' }]);
+    expect(days).toHaveLength(3);
+    expect(sessionsThisWeek(days, '2026-11-08')).toBe(2);
   });
 
   it('counts sessions from Monday', () => {
