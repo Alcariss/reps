@@ -439,6 +439,10 @@ body.in-player .container {
 
 .demo {
   position: relative;
+  display: block;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
   aspect-ratio: 4 / 3;
   border-radius: 12px;
   overflow: hidden;
@@ -453,22 +457,25 @@ body.in-player .container {
   object-fit: contain;
 }
 
-/* Two frames cross-fade: start position ↔ end position, ~1.2 s each. */
+/* Start ↔ end frame, hard switch like a GIF; src/demo-loop.ts flips data-show. */
 .demo .demo-b {
-  animation: demo-fade 2.4s ease-in-out infinite;
+  visibility: hidden;
 }
 
-@keyframes demo-fade {
-  0%, 35% { opacity: 0; }
-  50%, 85% { opacity: 1; }
-  100% { opacity: 0; }
+.demo[data-show='1'] .demo-b {
+  visibility: visible;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .demo .demo-b {
-    animation: none;
-    opacity: 0;
-  }
+.demo.paused::after {
+  content: '❚❚';
+  position: absolute;
+  left: 0.4rem;
+  top: 0.4rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.75);
+  color: #fff;
+  font-size: 0.8rem;
 }
 
 .target {
@@ -720,17 +727,25 @@ body.in-player .container {
   grid-template-columns: 1fr;
 }
 
-.ex-top.zoomed .demo-button {
+.ex-top.zoomed .demo-wrap {
   order: -1;
 }
 
-.demo-button {
-  display: block;
-  width: 100%;
-  min-height: 0;
+.demo-wrap {
+  position: relative;
+}
+
+.zoom-button {
+  position: absolute;
+  right: 0.3rem;
+  bottom: 0.3rem;
+  min-height: 36px;
+  min-width: 36px;
   padding: 0;
-  border-radius: 12px;
-  background: none;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.75);
+  color: #fff;
+  font-size: 1.1rem;
 }
 
 .cues-box summary {
