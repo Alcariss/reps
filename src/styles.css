@@ -655,18 +655,101 @@ body.in-player .container {
 .player-nav {
   position: fixed;
   inset: auto 0 0;
-  display: grid;
-  grid-template-columns: 1fr 2fr;
-  gap: 0.6rem;
+  display: flex;
+  gap: 0.5rem;
   padding: 0.6rem 1rem calc(0.6rem + env(safe-area-inset-bottom));
-  background: rgba(15, 23, 42, 0.96);
+  background: var(--bg);
   border-top: 1px solid var(--border);
-  z-index: 5;
+  /* Above the tab bar, so nothing can peek out behind it. */
+  z-index: 6;
 }
 
 .player-nav button {
-  min-height: 56px;
+  min-height: 60px;
   font-size: 1.05rem;
+}
+
+.player-nav .bar-primary {
+  flex: 1;
+  font-size: 1.2rem;
+}
+
+.player-nav .bar-back {
+  flex: none;
+  width: 60px;
+  padding: 0;
+}
+
+.player-nav .bar-extra {
+  flex: none;
+  padding: 0 0.9rem;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+/* No tab bar or app header during a workout: the bottom bar is the only nav. */
+body.in-player .tabs,
+body.in-player .topbar {
+  display: none !important;
+}
+
+body.in-player .container {
+  padding-top: max(0.4rem, env(safe-area-inset-top));
+  gap: 0.5rem;
+}
+
+.ex-top {
+  display: grid;
+  grid-template-columns: 1fr 9.5rem;
+  gap: 0.6rem;
+  align-items: start;
+}
+
+.ex-top h2 {
+  margin: 0 0 0.3rem;
+}
+
+.ex-title {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+}
+
+.ex-top.zoomed {
+  grid-template-columns: 1fr;
+}
+
+.ex-top.zoomed .demo-button {
+  order: -1;
+}
+
+.demo-button {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  border-radius: 12px;
+  background: none;
+}
+
+.cues-box summary {
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding: 0.3rem 0;
+}
+
+.exercise .logger {
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+}
+
+.exercise .stepper button {
+  min-height: 56px;
+}
+
+.exercise .segmented button {
+  min-height: 48px;
 }
 
 .rest {
