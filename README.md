@@ -44,7 +44,7 @@ tube bands with handles and a door anchor, bodyweight. 1–3 reps in reserve
 (RIR), 2–3 s lowering.
 
 - **Warm-up**, 1 round: band pull-apart ×15 (light band), world's greatest
-  stretch ×4/side, band good morning ×10 (medium band).
+  stretch ×4/side, bodyweight good morning ×10 (hands behind the head).
 - **Circuit**, 3 rounds, 90 → 45 s rest between exercises:
   goblet squat 8–15 · KB Romanian deadlift 8–15 · push-up 6–15 ·
   band row 10–20. Every second session the push-up becomes a **pike push-up**

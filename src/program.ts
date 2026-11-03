@@ -255,18 +255,18 @@ export const EXERCISES: Record<string, Exercise> = {
   },
   'band-good-morning': {
     id: 'band-good-morning',
-    name: 'Band good morning',
+    name: 'Bodyweight good morning',
     kind: 'reps',
     muscle: 'hinge',
     min: 10,
     max: 10,
     rirFloor: 3,
     cues: [
-      'Medium band under the feet and behind the neck',
+      'Hands behind the head, elbows wide',
       'Soft knees, push the hips back, flat back',
       'Stop at the hamstring stretch, stand tall by squeezing glutes'
     ],
-    ladder: [{ id: 'band-good-morning', name: 'Band good morning', demo: 'good-morning' }],
+    ladder: [{ id: 'band-good-morning', name: 'Bodyweight good morning', demo: 'good-morning' }],
     start: 'band-good-morning',
     warmup: true
   }
@@ -283,7 +283,7 @@ export const FINISHER = { rounds: 3, swing: 'swing', swings: 15, plank: 'plank',
 export const WARMUP: readonly { exercise: string; amount: string }[] = [
   { exercise: 'pull-apart', amount: '15, light band' },
   { exercise: 'worlds-greatest-stretch', amount: '4 per side' },
-  { exercise: 'band-good-morning', amount: '10, medium band' }
+  { exercise: 'band-good-morning', amount: '10, slow' }
 ];
 /** Exercises the circuit can contain. */
 export const CIRCUIT_POOL: readonly string[] = ['squat', 'rdl', 'pushup', 'pike-pushup', 'one-arm-row'];
