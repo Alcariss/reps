@@ -22,7 +22,10 @@ e-mails on the allowlist.
   at the end). The finisher is timed: 15 swings straight into a **plank hold
   timer**, 3 rounds. ⓘ opens the target, form cues and "too hard / too easy",
   which moves one band level or variation (on the easiest step it says how to
-  make it lighter). The screen stays on. The finish screen shows which
+  make it lighter). 🎵 toggles **generated lo-fi beats** (jazzy 7th chords,
+  bass, swung drums at 80 BPM, vinyl crackle), synthesised on the device with
+  Web Audio in `src/music.ts`, so there are no audio files and it works
+  offline; it plays only during a workout. The screen stays on. The finish screen shows which
   exercises earned a progression.
 - **Progress.** Per exercise: current step on the ladder and band, trend of
   total reps per session (inline SVG), best and total of the last session, next

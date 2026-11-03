@@ -6,6 +6,8 @@ export type Prefs = {
   bandNames: string[];
   sound: boolean;
   vibrate: boolean;
+  /** Generated lo-fi beats during workouts. */
+  music: boolean;
   /** First day of the current or last deload week. */
   deloadFrom: string | null;
   overrides: Record<string, Override>;
@@ -17,6 +19,7 @@ export const DEFAULT_PREFS: Prefs = {
   bandNames: DEFAULT_BAND_NAMES,
   sound: true,
   vibrate: true,
+  music: true,
   deloadFrom: null,
   overrides: {}
 };
@@ -34,6 +37,7 @@ export function normalizePrefs(value: unknown): Prefs {
     }),
     sound: record.sound !== false,
     vibrate: record.vibrate !== false,
+    music: record.music !== false,
     deloadFrom: typeof record.deloadFrom === 'string' ? record.deloadFrom : null,
     overrides: typeof record.overrides === 'object' && record.overrides !== null ? record.overrides : {}
   };

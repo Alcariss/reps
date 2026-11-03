@@ -1062,3 +1062,12 @@ details summary {
   font-size: 2rem;
   font-weight: 800;
 }
+
+.player-head .music {
+  font-size: 1.2rem;
+}
+
+.player-head .music[aria-pressed='false'] {
+  opacity: 0.35;
+  filter: grayscale(1);
+}

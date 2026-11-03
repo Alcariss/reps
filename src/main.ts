@@ -24,6 +24,7 @@ import { alarm, keepScreenOn, tick, unlockAudio } from './cues';
 import { addDays, daysBetween } from './dates';
 import { startDemoLoop } from './demo-loop';
 import { clearGifs, loadGifs } from './media';
+import { createMusic } from './music';
 import { adjust, deloadStatus, isProgression, replay, type Change, type ExerciseState, type LoggedSet } from './engine';
 import {
   setKey,
@@ -115,6 +116,14 @@ const draftSlot = createSlot<Draft>('reps:v1:draft');
 const prefsSlot = createSlot<Prefs>('reps:v1:prefs');
 const root = requiredElement('#app');
 const demos = startDemoLoop(root);
+const music = createMusic();
+// iOS: the music's audio context may only resume from a tap or a visible page.
+document.addEventListener('pointerdown', () => music.wake(), { capture: true, passive: true });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    music.wake();
+  }
+});
 const signInRequired = config.authProviders.length > 0;
 
 type Timer =
@@ -346,6 +355,7 @@ function render(): void {
   const player = inPlayer();
   document.body.classList.toggle('in-player', player);
   keepScreenOn(player);
+  syncMusic(player);
   const nav = requiredElement('#nav');
   nav.innerHTML = renderNav(state.tab);
   nav.hidden = player;
@@ -424,6 +434,16 @@ function inFinisher(draft: Draft): boolean {
   return draft.step === draft.circuit.size;
 }
 
+/** Music plays only inside the workout player, when it is switched on. */
+function syncMusic(player: boolean): void {
+  const want = player && state.prefs.music;
+  if (want && !music.playing) {
+    music.start();
+  } else if (!want && music.playing) {
+    music.stop();
+  }
+}
+
 function renderPlayer(view: HTMLElement, draft: Draft): void {
   if (draft.step < 0) {
     view.innerHTML = renderWarmup(draft, BASE);
@@ -434,6 +454,7 @@ function renderPlayer(view: HTMLElement, draft: Draft): void {
   } else {
     view.innerHTML = renderExercise(draft, state.prefs, BASE, state.input);
   }
+  view.querySelector('.music')?.setAttribute('aria-pressed', state.prefs.music ? 'true' : 'false');
   view.querySelector('.pick-strip [aria-pressed="true"]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
   renderRestLayer();
 }
@@ -832,6 +853,12 @@ async function onAction(event: Event): Promise<void> {
       });
       break;
     }
+    case 'music':
+      state.prefs.music = !state.prefs.music;
+      savePrefs();
+      syncMusic(inPlayer());
+      button.setAttribute('aria-pressed', state.prefs.music ? 'true' : 'false');
+      break;
     case 'close-sheet':
       document.querySelector<HTMLDialogElement>('#form-sheet')?.close();
       break;
@@ -994,6 +1021,7 @@ async function onSubmit(event: Event): Promise<void> {
       ...state.prefs,
       bandNames: Array.from({ length: BAND_LEVELS }, (_, index) => String(data.get(`band-${index}`) ?? '')),
       sound: data.get('sound') === 'on',
+      music: data.get('music') === 'on',
       vibrate: data.get('vibrate') === 'on'
     });
     savePrefs();
