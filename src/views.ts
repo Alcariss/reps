@@ -6,6 +6,7 @@ import {
   type DeloadStatus,
   type ExerciseState
 } from './engine';
+import { gifUrl } from './media';
 import type { BodyRecord } from './model';
 import { bandLabel, type Prefs } from './prefs';
 import {
@@ -58,6 +59,14 @@ export function renderNav(active: Tab): string {
 }
 
 export function renderDemo(key: DemoKey, base: string): string {
+  const gif = gifUrl(key);
+  if (gif) {
+    return `
+      <div class="demo gif">
+        <img src="${escapeHtml(gif)}" alt="" decoding="async" />
+      </div>
+    `;
+  }
   const [first, second] = demoFrames(key, base);
   return `
     <button type="button" class="demo" data-action="demo-toggle" data-show="0" aria-pressed="false" aria-label="Pause or play the demo">

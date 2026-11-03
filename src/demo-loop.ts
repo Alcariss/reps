@@ -9,7 +9,7 @@ export function startDemoLoop(root: ParentNode, intervalMs = 1000): { toggle(): 
   let paused = false;
 
   const apply = (): void => {
-    for (const demo of root.querySelectorAll<HTMLElement>('.demo')) {
+    for (const demo of root.querySelectorAll<HTMLElement>('.demo:not(.gif)')) {
       demo.classList.toggle('paused', paused);
       demo.setAttribute('aria-pressed', paused ? 'true' : 'false');
       if (!paused) {

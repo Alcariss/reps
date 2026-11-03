@@ -108,8 +108,21 @@ Sources:
 - Huberman Lab × Dr. Andy Galpin, [optimal protocols to build strength and grow muscles](https://www.hubermanlab.com/episode/dr-andy-galpin-optimal-protocols-to-build-strength-and-grow-muscles)
 - Renaissance Periodization, volume landmarks (MEV/MAV/MRV); Stronger by Science articles on volume, RIR and progression.
 
-Exercise images: [free-exercise-db](https://github.com/yuhonas/free-exercise-db)
-(public domain, Unlicense), downloaded to `public/exercises/` by `npm run demos`.
+Exercise animations: [GymVisual](https://gymvisual.com/) GIFs, licensed for
+personal use and therefore **not in this repo**. They live in the pwa-kit
+worker's `MEDIA` KV namespace (keys `reps/<name>.gif`), are served only to
+signed-in users (`?action=media`), and are cached on the device for offline
+workouts (`src/media.ts`). Exercises without a GIF, and anyone not signed in,
+see the [free-exercise-db](https://github.com/yuhonas/free-exercise-db) photos
+(public domain, Unlicense) in `public/exercises/`, downloaded by `npm run demos`.
+
+To add or replace a GIF (from `pwa-kit/worker`):
+
+```bash
+npx wrangler kv key put --remote --binding MEDIA reps/<name>.gif --path <file>.gif --metadata '{"contentType":"image/gif"}'
+```
+
+then map the demo key to `<name>` in `GIF_FOR` in `src/media.ts`.
 
 ## Development
 
@@ -130,7 +143,7 @@ Without Grist or sign-in, run the in-memory stub API (`--seed` adds two weeks
 of sample data):
 
 ```bash
-node scripts/stub-api.mjs --seed
+node scripts/stub-api.mjs --seed      # MEDIA_DIR=<folder of GIFs> to serve demos too
 VITE_API_URL_PRIMARY=http://localhost:8787/reps VITE_AUTH_PROVIDERS= npm run dev
 ```
 

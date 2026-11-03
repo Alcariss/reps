@@ -23,6 +23,7 @@ import {
 import { alarm, keepScreenOn, tick, unlockAudio } from './cues';
 import { addDays, daysBetween } from './dates';
 import { startDemoLoop } from './demo-loop';
+import { clearGifs, loadGifs } from './media';
 import { adjust, deloadStatus, isProgression, replay, type Change, type ExerciseState, type LoggedSet } from './engine';
 import {
   setKey,
@@ -946,6 +947,7 @@ async function onAction(event: Event): Promise<void> {
       break;
     }
     case 'logout':
+      void clearGifs();
       auth.logout();
       showLogin();
       break;
@@ -1065,6 +1067,12 @@ async function start(): Promise<void> {
     history.replaceState(null, '', '#today');
   }
   render();
+
+  void loadGifs(config.primaryUrl, auth.current()?.token ?? null).then((added) => {
+    if (added) {
+      render();
+    }
+  });
 
   await refresh();
   if (!inPlayer()) {
