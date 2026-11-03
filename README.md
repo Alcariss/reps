@@ -10,27 +10,25 @@ e-mails on the allowlist.
 
 ## What it does
 
-- **Today.** Suggests the next workout (A and B alternate, 3×/week on
-  non-consecutive days), shows days since the last one, the plan with the
-  current variation and sets, this week's sessions and the 7-day average weight.
-  A banner says when a deload week is due. Next to it, a **Quick (20–25 min)**
-  circuit for busy days.
-- **Workout player.** A 5-minute warm-up checklist, then one exercise at a
-  time: animated demo, form cues, target (variation, sets × rep range, tempo,
-  RIR, band level), big +/− steppers prefilled from last time, a 0–4 RIR
-  picker and a band picker. Logging a set starts the **rest timer** (2 min for
-  squats/hinges, 90 s for push/pull, 60 s for accessories; +15 s / skip; beep
-  and vibration at the end). The plank has a **hold timer**, the KB swing an
-  **EMOM timer** that logs each round itself, and ♩ toggles a **tempo
-  metronome**. The screen stays on during a workout. "Too hard / too easy"
-  moves one band level or variation. The finish screen shows which exercises
-  earned a progression.
-- **Quick circuit.** A 3-minute warm-up with demos, 4 exercises done round by
-  round (exercise → rest with "up next" → next exercise, round counter), then
-  a timed finisher: 15 swings straight into a 30–45 s plank, 3 rounds.
+- **Today.** One workout: the next circuit with each exercise's current
+  variation and rest, days since the last session (3×/week on non-consecutive
+  days works best), this week's sessions and the 7-day average weight. A banner
+  says when a deload week is due.
+- **Workout player.** A 3-minute warm-up with demos, then the circuit round by
+  round: one exercise at a time with an animated demo, target (variation,
+  rounds × rep range, rest, tempo, RIR, band level), big +/− steppers
+  prefilled from last time, a 0–4 RIR picker and a band picker. Logging a
+  round starts the **rest timer** with "up next" (+15 s / skip; beep and
+  vibration at the end). The finisher is timed: 15 swings straight into a
+  **plank hold timer**, 3 rounds. ♩ toggles a **tempo metronome**; the screen
+  stays on. "Too hard / too easy" moves one band level or variation, and on
+  the easiest step says how to make it lighter. The finish screen shows which
+  exercises earned a progression.
 - **Progress.** Per exercise: current step on the ladder and band, trend of
   total reps per session (inline SVG), best and total of the last session, next
-  prescription, progressing/stalled flags, and easier/harder overrides.
+  prescription and rest, progressing/stalled flags, and easier/harder
+  overrides. Exercises from the earlier plan stay listed under "Earlier
+  exercises".
 - **Body.** Weight (daily), waist (weekly), steps, protein. 7-day rolling
   average, weekly rate of change in %, protein target from your weight, a
   56-day chart, and a flag when loss stalls or runs too fast.
@@ -41,63 +39,55 @@ e-mails on the allowlist.
 
 ## Method
 
-Full body, 3×/week, A/B alternating. 3 working sets per exercise to start,
-1–3 reps in reserve (RIR), 2–3 s lowering.
+One 20–25 minute full-body circuit, 3×/week. Equipment: a 16 kg kettlebell,
+tube bands with handles and a door anchor, bodyweight. 1–3 reps in reserve
+(RIR), 2–3 s lowering.
 
-| A | B |
-|---|---|
-| Goblet squat 3×8–15 | Split squat 3×8–12/leg |
-| Band push-up 3×6–15 | KB Romanian deadlift 3×8–15 |
-| Two-arm bent-over band row 3×10–20 | One-arm KB press 3×6–12/side |
-| KB Romanian deadlift 3×8–15 | Bent-over band row 3×10–20 |
-| Band pull-apart / face pull 2×15–25 | Band push-up 3×6–15 |
-| Dead bug 2×6–10/side | KB swing EMOM 6–10 min × 10–15 |
-| Scapular push-up 2×8–15 | Plank 2×20–45 s |
-
-The scapular push-up ("lopatkový klik") is in the warm-up and as an accessory;
-the band push-up does the main chest work.
-
-**Quick (20–25 min)**, for days without time for A or B. It does not change
-the A/B order.
-
-- Warm-up, 1 round: band pull-apart ×15 (light band), world's greatest
+- **Warm-up**, 1 round: band pull-apart ×15 (light band), world's greatest
   stretch ×4/side, band good morning ×10 (medium band).
-- Circuit, 3 rounds: goblet squat · KB RDL · push-up · single-arm band row,
-  60–90 s rest between exercises. Every second Quick swaps the push-up for a
-  press, alternating KB floor press and single-arm band overhead press.
-- Finisher, 3 rounds without rest: KB swing ×15 + plank 30–45 s.
-- Quick sets are logged with `workout = Q` and use the same exercise ids and
-  ladders, so they appear in the history and move the same progression.
+- **Circuit**, 3 rounds, 90 → 45 s rest between exercises:
+  goblet squat 8–15 · KB Romanian deadlift 8–15 · push-up 6–15 ·
+  band row 10–20. Every second session the push-up becomes a **pike push-up**
+  6–12 for the shoulders (no overhead pressing with the 16 kg bell).
+- **Finisher**, 3 rounds without rest: KB swing ×15 + plank 30–45 s.
+
+Volume: 3 rounds × 3 sessions = 9 hard sets per muscle group per week, close
+to the ~10 sets/week where most of the hypertrophy benefit lies (Schoenfeld
+2017), in sessions short enough to keep doing. Progress comes from denser
+work (shorter rest) and harder variations rather than more sets.
+
+Until November 2026 the app had two longer workouts (A and B). Their sets
+(`workout` A/B) still load: squats, RDLs and push-ups count toward the history
+and progression above; retired exercises (split squat, KB press, …) are only
+listed.
 
 **Progression ladders** (`src/program.ts`):
 
 - Squat: goblet → goblet 3 s down + 2 s pause → goblet 1½ reps.
-  Split squat: KB split squat → Bulgarian → Bulgarian with KB → Bulgarian 1½ reps.
 - Hinge: KB RDL → KB RDL 4 s lowering → supported single-leg RDL → single-leg
   RDL → single-leg RDL + band.
 - Push: incline → push-up → band push-up (band levels) → deficit →
   feet-elevated → archer.
-- Press: half-kneeling → standing → pause/tempo press.
-- Row: band levels → shorter grip → two bands → 2 s squeeze → one-arm 16 kg KB row.
+- Pike push-up: incline (hands on a chair) → floor → feet-elevated → 2 s pause.
+- Row: door-anchored two-arm band row → single-arm door-anchored row →
+  single-arm bent-over band row → 2 s squeeze → one-arm 16 kg KB row. The
+  bands are elastic, so no inverted (TRX-style) rows.
 
 **Engine** (`src/engine.ts`, derived by replaying the log; no extra state):
 
 - **Double progression.** Inside the rep range, beat last time by a rep.
-- **Progress** when every working set reaches the top of the range at ≤2 RIR:
-  +1 set while that muscle stays ≤15 sets/week, otherwise the next band level,
-  otherwise the next variation (back to the bottom of the range). At ≥3 RIR
-  ("too easy") the extra set is skipped and the load goes up directly.
-- **Stall** when total reps drop two sessions in a row, or a set fails (0 RIR)
-  below the range: repeat once, then −1 set or one step back.
-- **Deload** every 6 weeks, or earlier when two exercises stall: one week at
-  half the sets and 3–4 RIR. Stall counters restart after it.
-- **Quick progression.** When every round of an exercise reaches the top of
-  the range, its circuit rest shortens 90 → 75 → 60 → 45 s. At 45 s the
-  regular rules apply (stronger band or next variation) and the rest starts
-  again at 90 s. Quick never changes the A/B set count; the finisher is
-  logged for history only.
-- Never to failure on RDLs and swings; the last set of push-ups, rows and band
-  work may go to 0 RIR.
+- **Progress** when every round reaches the top of the range at ≤2 RIR: the
+  rest after that exercise shortens 90 → 75 → 60 → 45 s. At 45 s the load goes
+  up (next band level, else the next variation, back to the bottom of the
+  range) and the rest starts again at 90 s. At ≥3 RIR ("too easy") the load
+  goes up straight away.
+- **Stall** when total reps drop two sessions in a row at the same load, or a
+  round fails (0 RIR) below the range: repeat once, then one band lighter or
+  one step back.
+- **Deload** every 6 weeks, or earlier when two exercises stall: one week of
+  2 rounds at 90 s rest and 3–4 RIR. Stall counters restart after it.
+- The finisher is logged for history only. Never to failure on RDLs and
+  swings; the last round of push-ups and rows may go to 0 RIR.
 
 **Fat loss** (tips in the Body tab): a 300–500 kcal/day deficit for
 0.5–1 %/week, protein 1.6–2.2 g/kg, steps baseline +2 000 toward 8–10 k, weigh
@@ -149,7 +139,7 @@ VITE_API_URL_PRIMARY=http://localhost:8787/reps VITE_AUTH_PROVIDERS= npm run dev
 1. **Grist:** document "Reps" with two tables. Dates and text are **Text**
    columns; the rest **Numeric**. Both need `owner`, `created_at`,
    `updated_at` (Text) for the worker.
-   - `Sets`: `date`, `workout` (A/B/Q), `exercise`, `variant`, `set_number`,
+   - `Sets`: `date`, `workout` (Q; A/B in older rows), `exercise`, `variant`, `set_number`,
      `reps`, `seconds`, `rir`, `band`, `note`
    - `Body`: `date`, `weight`, `waist`, `steps`, `protein`, `note`
 2. **Worker:** the `reps` entry in `pwa-kit/worker/src/apps.ts` with the

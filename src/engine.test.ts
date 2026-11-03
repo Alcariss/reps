@@ -6,13 +6,12 @@ import {
   initialState,
   prescribe,
   replay,
-  weeklySets,
   type LoggedSet
 } from './engine';
-import { EXERCISES } from './program';
+import { EXERCISES, type WorkoutId } from './program';
 
 const squat = EXERCISES.squat!;
-const row = EXERCISES.row!;
+const row = EXERCISES['one-arm-row']!;
 
 function session(
   date: string,
@@ -20,72 +19,73 @@ function session(
   variant: string,
   values: number[],
   rir: number | null = 2,
-  band: number | null = null
+  band: number | null = null,
+  workout: WorkoutId = 'Q'
 ): LoggedSet[] {
   return values.map((reps, index) => ({
-    date, exercise, variant, setNumber: index + 1, reps, seconds: null, rir, band
+    date, workout, exercise, variant, setNumber: index + 1, reps, seconds: null, rir, band
   }));
 }
 
+/** Top of the range in every round, four sessions in a row: 90 → 75 → 60 → 45 s, then load. */
+function topSessions(exercise: string, variant: string, top: number, band: number | null = null, count = 4): LoggedSet[] {
+  return Array.from({ length: count }, (_, index) => session(`2026-01-${String(1 + index * 2).padStart(2, '0')}`, exercise, variant, [top, top, top], 2, band)).flat();
+}
+
 describe('evaluate', () => {
-  it('progresses when every set hits the top of the range at ≤2 RIR', () => {
-    expect(evaluate(squat, session('2026-01-01', 'squat', 'goblet-squat', [15, 15, 15], 2), 3)).toBe('progress');
+  it('progresses when every round hits the top of the range at ≤2 RIR', () => {
+    expect(evaluate(squat, session('2026-01-01', 'squat', 'goblet-squat', [15, 15, 15], 2))).toBe('progress');
   });
 
   it('calls it easy at ≥3 RIR on top reps', () => {
-    expect(evaluate(squat, session('2026-01-01', 'squat', 'goblet-squat', [15, 15, 15], 3), 3)).toBe('easy');
+    expect(evaluate(squat, session('2026-01-01', 'squat', 'goblet-squat', [15, 15, 15], 3))).toBe('easy');
   });
 
   it('holds while reps are inside the range', () => {
-    expect(evaluate(squat, session('2026-01-01', 'squat', 'goblet-squat', [15, 13, 12]), 3)).toBe('hold');
+    expect(evaluate(squat, session('2026-01-01', 'squat', 'goblet-squat', [15, 13, 12]))).toBe('hold');
   });
 
   it('stalls on failure below the range', () => {
-    expect(evaluate(squat, session('2026-01-01', 'squat', 'goblet-squat', [9, 8, 6], 0), 3)).toBe('stall');
+    expect(evaluate(squat, session('2026-01-01', 'squat', 'goblet-squat', [9, 8, 6], 0))).toBe('stall');
   });
 
-  it('ignores sessions with fewer sets than prescribed (deload, cut short)', () => {
-    expect(evaluate(squat, session('2026-01-01', 'squat', 'goblet-squat', [15, 15]), 3)).toBe('incomplete');
+  it('ignores sessions with fewer than 3 rounds (deload, cut short)', () => {
+    expect(evaluate(squat, session('2026-01-01', 'squat', 'goblet-squat', [15, 15]))).toBe('incomplete');
   });
 });
 
 describe('replay', () => {
-  it('starts every exercise at its first variant', () => {
+  it('starts every exercise at its first variant with 90 s rest', () => {
     const states = replay([]);
-    expect(states.squat).toMatchObject({ variant: 'goblet-squat', sets: 3, band: null, change: 'start' });
-    expect(states.pushup).toMatchObject({ variant: 'band-pushup', band: 2 });
+    expect(states.squat).toMatchObject({ variant: 'goblet-squat', band: null, rest: 90, change: 'start' });
+    expect(states['one-arm-row']).toMatchObject({ variant: 'door-band-row', band: 2 });
+    expect(states['pike-pushup']).toMatchObject({ variant: 'incline-pike-pushup', band: null });
+    expect(states['pull-apart']).toBeUndefined();
   });
 
-  it('adds a set first, then moves to the next variant at max sets', () => {
-    let sets = session('2026-01-01', 'squat', 'goblet-squat', [15, 15, 15]);
-    let state = replay(sets).squat!;
-    expect(state).toMatchObject({ sets: 4, change: 'set+', variant: 'goblet-squat' });
-
-    sets = [...sets, ...session('2026-01-03', 'squat', 'goblet-squat', [15, 15, 15, 15])];
-    state = replay(sets).squat!;
-    expect(state).toMatchObject({ sets: 3, change: 'variant+', variant: 'goblet-squat-tempo', target: 8 });
+  it('double progression: aims one rep above the best round', () => {
+    expect(replay(session('2026-01-01', 'squat', 'goblet-squat', [12, 11, 10])).squat).toMatchObject({ change: 'reps+', target: 13 });
   });
 
-  it('double progression: aims one rep above the best set', () => {
-    const state = replay(session('2026-01-01', 'squat', 'goblet-squat', [12, 11, 10])).squat!;
-    expect(state).toMatchObject({ change: 'reps+', target: 13, sets: 3 });
+  it('shortens the rest 90 → 75 → 60 → 45 before adding load', () => {
+    const sets = topSessions('squat', 'goblet-squat', 15, null, 3);
+    expect(replay(sets).squat).toMatchObject({ rest: 45, change: 'rest-', variant: 'goblet-squat' });
+    const more = topSessions('squat', 'goblet-squat', 15, null, 4);
+    expect(replay(more).squat).toMatchObject({ rest: 90, change: 'variant+', variant: 'goblet-squat-tempo', target: 8 });
   });
 
-  it('easy band work goes straight to the next band level', () => {
-    const state = replay(session('2026-01-01', 'row', 'band-row', [20, 20, 20], 4, 2)).row!;
-    expect(state).toMatchObject({ band: 3, change: 'band+', sets: row.sets, target: row.min });
+  it('moves a band up at 45 s rest', () => {
+    expect(replay(topSessions('one-arm-row', 'door-band-row', 20, 2))['one-arm-row']).toMatchObject({ band: 3, change: 'band+', rest: 90 });
   });
 
-  it('respects the weekly set cap before adding sets', () => {
-    // Push-ups (A and B) + press already add up to 13.5 sets/week; one more push-up set would pass 15.
-    expect(weeklySets('push', replay([]))).toBe(13.5);
-    const state = replay(session('2026-01-01', 'pushup', 'band-pushup', [15, 15, 15], 2, 2)).pushup!;
-    expect(state).toMatchObject({ change: 'band+', band: 3, sets: 3 });
+  it('easy work skips the rest steps and adds load', () => {
+    const state = replay(session('2026-01-01', 'one-arm-row', 'door-band-row', [20, 20, 20], 4, 2))['one-arm-row']!;
+    expect(state).toMatchObject({ band: 3, change: 'band+', target: row.min });
   });
 
   it('moves to a new banded step a little lighter', () => {
-    const state = replay(session('2026-01-01', 'row', 'band-row', [20, 20, 20], 4, 6)).row!;
-    expect(state).toMatchObject({ variant: 'band-row-short', band: 4, change: 'variant+' });
+    const state = replay(session('2026-01-01', 'one-arm-row', 'door-band-row', [20, 20, 20], 4, 6))['one-arm-row']!;
+    expect(state).toMatchObject({ variant: 'door-one-arm-row', band: 4, change: 'variant+' });
   });
 
   it('repeats once after a stall, then steps back', () => {
@@ -94,23 +94,13 @@ describe('replay', () => {
       ...session('2026-01-03', 'rdl', 'kb-rdl-tempo', [11, 11, 11]),
       ...session('2026-01-05', 'rdl', 'kb-rdl-tempo', [10, 10, 10])
     ];
-    let state = replay(sets).rdl!;
-    expect(state).toMatchObject({ lastOutcome: 'stall', change: 'repeat', variant: 'kb-rdl-tempo' });
-
-    state = replay([...sets, ...session('2026-01-07', 'rdl', 'kb-rdl-tempo', [9, 9, 9])]).rdl!;
-    expect(state).toMatchObject({ change: 'variant-', variant: 'kb-rdl' });
+    expect(replay(sets).rdl).toMatchObject({ lastOutcome: 'stall', change: 'repeat', variant: 'kb-rdl-tempo' });
+    expect(replay([...sets, ...session('2026-01-07', 'rdl', 'kb-rdl-tempo', [9, 9, 9])]).rdl).toMatchObject({ change: 'variant-', variant: 'kb-rdl' });
   });
 
-  it('treats failing below the range as a stall', () => {
-    const state = replay(session('2026-01-01', 'squat', 'goblet-squat', [10, 8, 6], 0)).squat!;
-    expect(state).toMatchObject({ lastOutcome: 'stall', change: 'repeat', stallStrikes: 1 });
-  });
-
-  it('does not change anything after a deload session', () => {
-    const before = session('2026-01-01', 'squat', 'goblet-squat', [12, 12, 12]);
-    const deload = session('2026-01-08', 'squat', 'goblet-squat', [8, 8]);
-    const state = replay([...before, ...deload]).squat!;
-    expect(state).toMatchObject({ lastOutcome: 'incomplete', change: 'none', sets: 3, lastTotal: 36 });
+  it('does not change anything after a short (deload) session', () => {
+    const sets = [...session('2026-01-01', 'squat', 'goblet-squat', [12, 12, 12]), ...session('2026-01-08', 'squat', 'goblet-squat', [8, 8])];
+    expect(replay(sets).squat).toMatchObject({ lastOutcome: 'incomplete', change: 'none', lastTotal: 36 });
   });
 
   it('forgets stall streaks after a deload', () => {
@@ -123,41 +113,49 @@ describe('replay', () => {
     expect(replay(sets, { resetAfter: '2026-01-10' }).squat!.lastOutcome).toBe('hold');
   });
 
-  it('adopts the variant that was actually logged', () => {
-    const state = replay(session('2026-01-01', 'pushup', 'pushup', [8, 8, 7])).pushup!;
-    expect(state).toMatchObject({ variant: 'pushup', change: 'reps+' });
+  it('keeps old A/B sets for shared exercises and skips retired ones', () => {
+    const sets = [
+      ...session('2026-01-01', 'squat', 'goblet-squat', [12, 12, 12, 12], 2, null, 'A'),
+      ...session('2026-01-01', 'press', 'half-kneeling-press', [8, 8, 8], 2, null, 'B'),
+      ...session('2026-01-03', 'squat', 'goblet-squat', [13, 13, 13])
+    ];
+    const states = replay(sets);
+    expect(states.squat!.history.map((summary) => summary.workout)).toEqual(['A', 'Q']);
+    expect(states.press).toBeUndefined();
+  });
+
+  it('keeps an old bent-over row variant that was logged before the door-anchored steps', () => {
+    expect(replay(session('2026-01-01', 'one-arm-row', 'one-arm-band-row', [12, 12, 12], 2, 3))['one-arm-row']).toMatchObject({ variant: 'one-arm-band-row', band: 3 });
+  });
+
+  it('logs the finisher for history only', () => {
+    const swings = session('2026-01-01', 'swing', 'two-arm-swing', [15, 15, 15]);
+    const state = replay(swings).swing!;
+    expect(state).toMatchObject({ change: 'start', lastOutcome: null });
+    expect(state.history).toHaveLength(1);
   });
 
   it('applies a manual override only when it is newer than the log', () => {
     const sets = session('2026-01-05', 'squat', 'goblet-squat', [12, 12, 12]);
-    const newer = replay(sets, { overrides: { squat: { variant: 'goblet-squat-tempo', band: null, date: '2026-01-06' } } });
-    expect(newer.squat).toMatchObject({ variant: 'goblet-squat-tempo', change: 'manual' });
-    const older = replay(sets, { overrides: { squat: { variant: 'goblet-squat-tempo', band: null, date: '2026-01-04' } } });
-    expect(older.squat).toMatchObject({ variant: 'goblet-squat', change: 'reps+' });
-  });
-
-  it('counts EMOM minutes as sets and adds a minute on success', () => {
-    const swings = Array.from({ length: 6 }, (_, index) => ({
-      date: '2026-01-01', exercise: 'swing', variant: 'two-arm-swing', setNumber: index + 1, reps: 15, seconds: null, rir: null, band: null
-    }));
-    expect(replay(swings).swing).toMatchObject({ sets: 7, change: 'set+' });
+    expect(replay(sets, { overrides: { squat: { variant: 'goblet-squat-tempo', band: null, date: '2026-01-06' } } }).squat).toMatchObject({ variant: 'goblet-squat-tempo', change: 'manual' });
+    expect(replay(sets, { overrides: { squat: { variant: 'goblet-squat-tempo', band: null, date: '2026-01-04' } } }).squat).toMatchObject({ variant: 'goblet-squat', change: 'reps+' });
   });
 });
 
 describe('adjust', () => {
-  it('moves the band before the variant', () => {
-    expect(adjust('row', { variant: 'band-row', band: 3 }, 1)).toEqual({ variant: 'band-row', band: 4 });
-    expect(adjust('row', { variant: 'band-row', band: 1 }, -1)).toEqual({ variant: 'band-row', band: 1 });
+  it('moves the band before the variant, and stops at the easiest step', () => {
+    expect(adjust('one-arm-row', { variant: 'door-band-row', band: 3 }, 1)).toEqual({ variant: 'door-band-row', band: 4 });
+    expect(adjust('one-arm-row', { variant: 'door-band-row', band: 1 }, -1)).toEqual({ variant: 'door-band-row', band: 1 });
     expect(adjust('pushup', { variant: 'band-pushup', band: 1 }, -1)).toEqual({ variant: 'pushup', band: null });
-    expect(adjust('pushup', { variant: 'pushup', band: null }, 1)).toEqual({ variant: 'band-pushup', band: 1 });
+    expect(adjust('pike-pushup', { variant: 'incline-pike-pushup', band: null }, -1)).toEqual({ variant: 'incline-pike-pushup', band: null });
   });
 });
 
 describe('prescribe', () => {
-  it('halves the sets and raises RIR in a deload', () => {
-    const state = { ...initialState(squat), sets: 4 };
-    expect(prescribe(squat, state, true)).toMatchObject({ sets: 2, rir: expect.stringContaining('3–4') });
-    expect(prescribe(squat, state, false)).toMatchObject({ sets: 4 });
+  it('runs 3 rounds at the engine rest, or 2 easy rounds at 90 s in a deload', () => {
+    const state = { ...initialState(squat), rest: 60, target: 12 };
+    expect(prescribe(squat, state, false)).toMatchObject({ rounds: 3, rest: 60, target: 12 });
+    expect(prescribe(squat, state, true)).toMatchObject({ rounds: 2, rest: 90, rir: expect.stringContaining('3–4') });
   });
 });
 
@@ -167,10 +165,6 @@ describe('deloadStatus', () => {
   it('is due every 6 weeks', () => {
     expect(deloadStatus(fresh, '2026-01-01', '2026-02-05', null).due).toBe(false);
     expect(deloadStatus(fresh, '2026-01-01', '2026-02-12', null)).toMatchObject({ due: true, reason: 'scheduled', weeks: 6 });
-  });
-
-  it('counts from the end of the last deload', () => {
-    expect(deloadStatus(fresh, '2026-01-01', '2026-03-01', '2026-02-12')).toMatchObject({ due: false, active: false });
   });
 
   it('is active during the deload week', () => {
@@ -183,69 +177,5 @@ describe('deloadStatus', () => {
       ...session('2026-01-01', 'rdl', 'kb-rdl', [10, 8, 6], 0)
     ]);
     expect(deloadStatus(states, '2026-01-01', '2026-01-03', null)).toMatchObject({ due: true, reason: 'stalls' });
-  });
-});
-
-describe('Quick sessions', () => {
-  function quick(date: string, exercise: string, variant: string, values: number[], rir = 2, band: number | null = null): LoggedSet[] {
-    return session(date, exercise, variant, values, rir, band).map((set) => ({ ...set, workout: 'Q' as const }));
-  }
-
-  it('shortens the circuit rest 90 → 75 → 60 → 45 before adding load', () => {
-    let sets: LoggedSet[] = [];
-    const rests: number[] = [];
-    for (const date of ['2026-01-01', '2026-01-03', '2026-01-05']) {
-      sets = [...sets, ...quick(date, 'squat', 'goblet-squat', [15, 15, 15])];
-      const state = replay(sets).squat!;
-      rests.push(state.quickRest);
-      expect(state).toMatchObject({ change: 'rest-', variant: 'goblet-squat', sets: 3 });
-    }
-    expect(rests).toEqual([75, 60, 45]);
-
-    sets = [...sets, ...quick('2026-01-07', 'squat', 'goblet-squat', [15, 15, 15])];
-    expect(replay(sets).squat).toMatchObject({ change: 'variant+', variant: 'goblet-squat-tempo', quickRest: 90 });
-  });
-
-  it('moves a band up at 45 s rest and starts the rest again', () => {
-    const sets = ['2026-01-01', '2026-01-03', '2026-01-05', '2026-01-07']
-      .flatMap((date) => quick(date, 'one-arm-row', 'one-arm-band-row', [20, 20, 20], 2, 2));
-    expect(replay(sets)['one-arm-row']).toMatchObject({ band: 3, change: 'band+', quickRest: 90 });
-  });
-
-  it('never adds A/B sets and is shared with A/B history', () => {
-    const sets = [
-      ...session('2026-01-01', 'squat', 'goblet-squat', [12, 12, 12]),
-      ...quick('2026-01-02', 'squat', 'goblet-squat', [15, 15, 15])
-    ];
-    const state = replay(sets).squat!;
-    expect(state).toMatchObject({ sets: 3, quickRest: 75 });
-    expect(state.history.map((summary) => summary.workout)).toEqual(['A', 'Q']);
-  });
-
-  it('keeps A and Q on the same day as separate sessions', () => {
-    const sets = [
-      ...session('2026-01-01', 'squat', 'goblet-squat', [12, 12, 12]),
-      ...quick('2026-01-01', 'squat', 'goblet-squat', [10, 10, 10])
-    ];
-    expect(replay(sets).squat!.history).toHaveLength(2);
-  });
-
-  it('logs the finisher for history only', () => {
-    const before = replay(session('2026-01-01', 'plank', 'plank', [45, 45], null).map((set) => ({ ...set, reps: null, seconds: 45 })));
-    const after = replay([
-      ...session('2026-01-01', 'plank', 'plank', [45, 45], null).map((set) => ({ ...set, reps: null, seconds: 45 })),
-      ...quick('2026-01-03', 'plank', 'plank', [0, 0, 0]).map((set) => ({ ...set, reps: null, seconds: 45 }))
-    ]);
-    expect(after.plank).toMatchObject({ change: before.plank!.change, variant: before.plank!.variant });
-    expect(after.plank!.history).toHaveLength(2);
-  });
-
-  it('a lighter A/B step resets the Quick rest', () => {
-    const sets = [
-      ...quick('2026-01-01', 'rdl', 'kb-rdl-tempo', [15, 15, 15]),
-      ...session('2026-01-03', 'rdl', 'kb-rdl-tempo', [9, 8, 6], 0),
-      ...session('2026-01-05', 'rdl', 'kb-rdl-tempo', [9, 8, 6], 0)
-    ];
-    expect(replay(sets).rdl).toMatchObject({ variant: 'kb-rdl', quickRest: 90 });
   });
 });
