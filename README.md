@@ -15,14 +15,14 @@ e-mails on the allowlist.
   days works best), this week's sessions and the 7-day average weight. A banner
   says when a deload week is due.
 - **Workout player.** A 3-minute warm-up with demos, then the circuit round by
-  round: one exercise at a time with an animated demo, target (variation,
-  rounds × rep range, rest, tempo, RIR, band level), big +/− steppers
-  prefilled from last time, a 0–4 RIR picker and a band picker. Logging a
-  round starts the **rest timer** with "up next" (+15 s / skip; beep and
-  vibration at the end). The finisher is timed: 15 swings straight into a
-  **plank hold timer**, 3 rounds. ♩ toggles a **tempo metronome**; the screen
-  stays on. "Too hard / too easy" moves one band level or variation, and on
-  the easiest step says how to make it lighter. The finish screen shows which
+  round, built to use mid-set: the exercise name, a big animated demo, a row
+  of numbers to tap for the reps you did (prefilled from last time), a 0–4 RIR
+  picker and, for band work, the band level. One big button logs the round and
+  starts the **rest timer** with "up next" (+15 s / skip; beep and vibration
+  at the end). The finisher is timed: 15 swings straight into a **plank hold
+  timer**, 3 rounds. ⓘ opens the target, form cues and "too hard / too easy",
+  which moves one band level or variation (on the easiest step it says how to
+  make it lighter). The screen stays on. The finish screen shows which
   exercises earned a progression.
 - **Progress.** Per exercise: current step on the ladder and band, trend of
   total reps per session (inline SVG), best and total of the last session, next

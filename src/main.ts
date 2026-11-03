@@ -130,7 +130,6 @@ type State = {
   timer: Timer;
   progressed: Record<string, Change>;
   restBeep: number;
-  tempoTick: number;
 };
 
 const state: State = {
@@ -143,7 +142,6 @@ const state: State = {
   timer: { mode: 'idle' },
   progressed: {},
   restBeep: -1,
-  tempoTick: -1
 };
 
 setupUpdatePrompt(registerSW);
@@ -435,6 +433,7 @@ function renderPlayer(view: HTMLElement, draft: Draft): void {
   } else {
     view.innerHTML = renderExercise(draft, state.prefs, BASE, state.input);
   }
+  view.querySelector('.pick-strip [aria-pressed="true"]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
   renderRestLayer();
 }
 
@@ -447,7 +446,12 @@ function renderRestLayer(): void {
   }
   // The position has already moved on: show what comes next.
   const next = currentItem();
-  const upNext = inFinisher(draft) ? 'Finisher: swings + plank' : next ? findVariant(exercise(next.exercise), next.variant).name : null;
+  // After the last round of the last exercise the position stays put until "Finisher ▶".
+  const circuitDone = draft.step === draft.circuit.size - 1 && draft.circuit.round >= draft.circuit.rounds
+    && (next?.logged.length ?? 0) >= draft.circuit.round;
+  const upNext = inFinisher(draft) || circuitDone
+    ? 'Finisher: swings + plank'
+    : next ? findVariant(exercise(next.exercise), next.variant).name : null;
   layer.innerHTML = renderRest(draft.restEndsAt, draft.restTotal, Date.now(), upNext);
 }
 
@@ -741,34 +745,6 @@ function onTick(): void {
     }
     return;
   }
-
-  // Tempo metronome: one click per second, accented at the start of each rep.
-  const item = currentItem();
-  if (state.prefs.tempoCue && item) {
-    const ex = exercise(item.exercise);
-    const tempo = findVariant(ex, item.variant).tempo;
-    if (ex.kind === 'reps' && tempo) {
-      const cycle = Math.max(2, tempo.split('-').reduce((sum, part) => sum + Number(part), 0));
-      const second = Math.floor(now / 1000);
-      if (second !== state.tempoTick) {
-        state.tempoTick = second;
-        tempoBeat(second % cycle === 0);
-      }
-    }
-  }
-}
-
-/** One metronome beat: a click (if sound is on) and a flash of the ♩ button. */
-function tempoBeat(accent: boolean): void {
-  tick(signals(), accent);
-  const button = document.querySelector<HTMLElement>('[data-action="tempo"]');
-  if (button) {
-    button.classList.remove('pulse', 'accent');
-    // Reflow so the animation restarts on every beat.
-    void button.offsetWidth;
-    button.classList.add('pulse');
-    button.classList.toggle('accent', accent);
-  }
 }
 
 // ---------- actions ----------
@@ -817,22 +793,42 @@ async function onAction(event: Event): Promise<void> {
     case 'prev':
       moveCircuit(-1);
       break;
-    case 'step': {
-      const item = currentItem();
-      const size = item && exercise(item.exercise).kind === 'hold' ? 5 : 1;
-      state.input.value = Math.max(1, state.input.value + Number(button.dataset.delta) * size);
-      setText('#value-value strong', String(state.input.value));
+    case 'pick': {
+      // Update in place: a full render would restart the demo GIF.
+      state.input.value = Number(button.dataset.value);
+      for (const option of document.querySelectorAll<HTMLButtonElement>('[data-action="pick"]')) {
+        option.setAttribute('aria-pressed', option === button ? 'true' : 'false');
+      }
+      const primary = document.querySelector<HTMLButtonElement>('.bar-primary');
+      if (primary && /^(Done · |▶ Start )/.test(primary.textContent ?? '')) {
+        primary.textContent = (primary.textContent ?? '').replace(/\d+/, String(state.input.value));
+      }
       break;
     }
+    case 'form': {
+      const sheet = document.querySelector<HTMLDialogElement>('#form-sheet');
+      sheet?.showModal();
+      // A tap on the dimmed backdrop (outside the sheet's box) closes it.
+      sheet?.addEventListener('click', (click) => {
+        const box = sheet.getBoundingClientRect();
+        if (click.clientX < box.left || click.clientX > box.right || click.clientY < box.top || click.clientY > box.bottom) {
+          sheet.close();
+        }
+      });
+      break;
+    }
+    case 'close-sheet':
+      document.querySelector<HTMLDialogElement>('#form-sheet')?.close();
+      break;
     case 'rir':
       state.input.rir = Number(button.dataset.rir);
       for (const option of document.querySelectorAll<HTMLButtonElement>('[data-action="rir"]')) {
         option.setAttribute('aria-pressed', option === button ? 'true' : 'false');
       }
       break;
-    case 'band':
+    case 'band-pick':
       if (state.input.band !== null) {
-        state.input.band = clampBand(state.input.band + Number(button.dataset.delta));
+        state.input.band = clampBand(Number(button.dataset.band));
         render();
       }
       break;
@@ -848,17 +844,6 @@ async function onAction(event: Event): Promise<void> {
       break;
     case 'harder':
       adjustCurrent(1);
-      break;
-    case 'tempo':
-      unlockAudio();
-      state.prefs.tempoCue = !state.prefs.tempoCue;
-      savePrefs();
-      render();
-      if (state.prefs.tempoCue) {
-        // Immediate confirmation; the regular beat starts on the next second.
-        state.tempoTick = Math.floor(Date.now() / 1000);
-        tempoBeat(true);
-      }
       break;
     case 'rest-add':
       if (draft?.restEndsAt) {
@@ -893,9 +878,6 @@ async function onAction(event: Event): Promise<void> {
       break;
     case 'demo-toggle':
       demos.toggle();
-      break;
-    case 'zoom-demo':
-      button.closest('.ex-top')?.classList.toggle('zoomed');
       break;
     case 'close-finish':
       closeWorkout();
@@ -997,8 +979,7 @@ async function onSubmit(event: Event): Promise<void> {
       ...state.prefs,
       bandNames: Array.from({ length: BAND_LEVELS }, (_, index) => String(data.get(`band-${index}`) ?? '')),
       sound: data.get('sound') === 'on',
-      vibrate: data.get('vibrate') === 'on',
-      tempoCue: data.get('tempoCue') === 'on'
+      vibrate: data.get('vibrate') === 'on'
     });
     savePrefs();
     toast('Settings saved.');
