@@ -2,7 +2,10 @@
 // without Grist or sign-in. Data is lost when it stops.
 //   node scripts/stub-api.mjs [--seed]
 //   VITE_API_URL_PRIMARY=http://localhost:8787/reps VITE_AUTH_PROVIDERS= npm run dev
+// MEDIA_DIR=<folder of <name>.gif files> serves the private demo GIFs (?action=media).
+import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
+import { join } from 'node:path';
 
 const NUMBER_FIELDS = new Set(['setNumber', 'reps', 'seconds', 'rir', 'band', 'weight', 'waist', 'steps', 'protein']);
 const FIELDS = {
@@ -60,6 +63,20 @@ createServer((request, response) => {
   }
   const url = new URL(request.url ?? '/', 'http://localhost');
   const params = url.searchParams;
+  if (params.get('action') === 'media') {
+    const name = params.get('name') ?? '';
+    if (!process.env.MEDIA_DIR || !/^[a-z0-9-]+\.gif$/.test(name)) {
+      return reply(response, null, 'NOT_FOUND', 404);
+    }
+    readFile(join(process.env.MEDIA_DIR, name)).then(
+      (bytes) => {
+        response.writeHead(200, { 'Content-Type': 'image/gif', 'Access-Control-Allow-Origin': '*' });
+        response.end(bytes);
+      },
+      () => reply(response, null, 'NOT_FOUND', 404)
+    );
+    return;
+  }
   const table = params.get('table');
   if (!(table in tables)) {
     return reply(response, null, 'VALIDATION_ERROR', 400);
