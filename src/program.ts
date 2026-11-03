@@ -1,14 +1,16 @@
 import demoNames from './demos.json';
 
 /**
- * The training program: exercises, their progression ladders and the two
- * alternating full-body workouts. Pure data, no DOM.
+ * The training program: one 20–25 min full-body circuit ("Quick"), its
+ * exercises and their progression ladders. Pure data, no DOM.
  */
 
-/** A and B are the full plan; Q is the 20–25 min Quick circuit. */
+/**
+ * Logged workout of a set. Only 'Q' is created now; 'A' and 'B' are sets from
+ * the earlier two-workout plan, still read so their history counts.
+ */
 export type WorkoutId = 'A' | 'B' | 'Q';
-export type PlanId = 'A' | 'B';
-export type ExerciseKind = 'reps' | 'hold' | 'emom';
+export type ExerciseKind = 'reps' | 'hold';
 export type Muscle = 'legs' | 'hinge' | 'push' | 'pull' | 'core' | 'conditioning';
 export type DemoKey = keyof typeof demoNames;
 
@@ -16,13 +18,15 @@ export type Variant = {
   id: string;
   name: string;
   demo: DemoKey;
-  /** Reps are counted per side (split squats, single-leg work, one-arm press). */
+  /** Reps are counted per side (single-leg work, one-arm row). */
   perSide?: boolean;
   /** The band level is the load and can go up before the next variant. */
   banded?: boolean;
   tempo?: string;
   /** Extra cue shown for this step only. */
   hint?: string;
+  /** Form cues for this step when they differ from the exercise's. */
+  cues?: string[];
 };
 
 export type Exercise = {
@@ -30,30 +34,30 @@ export type Exercise = {
   name: string;
   kind: ExerciseKind;
   muscle: Muscle;
-  /** Main lifts rest longer and count toward the weekly volume cap. */
-  main: boolean;
-  /** Working sets at the start of a variant (EMOM: minutes). */
-  sets: number;
-  maxSets: number;
-  /** Reps per set, seconds per hold, or reps per EMOM minute. */
+  /** Reps per round, or seconds for holds. */
   min: number;
   max: number;
-  restSeconds: number;
   /** Lowest RIR to aim for. 1 = never grind to failure (RDL, swing). */
   rirFloor: number;
-  /** Uses a resistance band, so a band level is logged. */
-  usesBand: boolean;
   cues: string[];
   ladder: Variant[];
   /** Variant a new user starts on. */
   start: string;
   /** Warm-up movement only: shown with a demo, never logged or progressed. */
   warmup?: boolean;
+  /** Finisher (swings, plank): fixed targets, logged for history only. */
+  finisher?: boolean;
 };
 
 export const BAND_LEVELS = 6;
-export const WEEKLY_SET_CAP = 15;
 export const SESSIONS_PER_WEEK = 3;
+
+const BENT_OVER_ROW_CUES = [
+  'Band under the opposite foot, staggered stance, flat back',
+  'Elbow to the back pocket, not out to the side',
+  'Squeeze the shoulder blade back and down',
+  '2–3 s return, no torso twist'
+];
 
 export const EXERCISES: Record<string, Exercise> = {
   squat: {
@@ -61,14 +65,9 @@ export const EXERCISES: Record<string, Exercise> = {
     name: 'Goblet squat',
     kind: 'reps',
     muscle: 'legs',
-    main: true,
-    sets: 3,
-    maxSets: 4,
     min: 8,
     max: 15,
-    restSeconds: 120,
     rirFloor: 1,
-    usesBand: false,
     cues: [
       'KB vertical at chest, elbows down',
       'Spread the floor, knees over toes',
@@ -82,46 +81,14 @@ export const EXERCISES: Record<string, Exercise> = {
     ],
     start: 'goblet-squat'
   },
-  'split-squat': {
-    id: 'split-squat',
-    name: 'Split squat',
-    kind: 'reps',
-    muscle: 'legs',
-    main: true,
-    sets: 3,
-    maxSets: 4,
-    min: 8,
-    max: 12,
-    restSeconds: 120,
-    rirFloor: 1,
-    usesBand: false,
-    cues: [
-      'Long stance',
-      'Back knee goes straight down',
-      'Drive through front heel and midfoot',
-      'Slight forward lean for more glutes'
-    ],
-    ladder: [
-      { id: 'kb-split-squat', name: 'KB split squat', demo: 'split-squat', perSide: true, tempo: '2-0-1' },
-      { id: 'rfe-split-squat', name: 'Rear-foot-elevated (Bulgarian) split squat', demo: 'split-squat', perSide: true, tempo: '2-0-1', hint: 'Back foot on a chair or sofa.' },
-      { id: 'rfe-split-squat-kb', name: 'Bulgarian split squat with KB', demo: 'split-squat', perSide: true, tempo: '2-0-1' },
-      { id: 'rfe-split-squat-1-5', name: 'Bulgarian split squat 1½ reps', demo: 'split-squat', perSide: true, tempo: '3-0-1' }
-    ],
-    start: 'kb-split-squat'
-  },
   rdl: {
     id: 'rdl',
     name: 'Romanian deadlift',
     kind: 'reps',
     muscle: 'hinge',
-    main: true,
-    sets: 3,
-    maxSets: 4,
     min: 8,
     max: 15,
-    restSeconds: 120,
     rirFloor: 1,
-    usesBand: false,
     cues: [
       'Soft knees, hips back like closing a car door',
       'KB slides along thighs, spine neutral, lats tight',
@@ -142,14 +109,9 @@ export const EXERCISES: Record<string, Exercise> = {
     name: 'Push-up',
     kind: 'reps',
     muscle: 'push',
-    main: true,
-    sets: 3,
-    maxSets: 4,
     min: 6,
     max: 15,
-    restSeconds: 90,
     rirFloor: 0,
-    usesBand: true,
     cues: [
       'Band across upper back, ends under hands',
       'Elbows 30–45° from the body',
@@ -166,268 +128,59 @@ export const EXERCISES: Record<string, Exercise> = {
     ],
     start: 'band-pushup'
   },
-  press: {
-    id: 'press',
-    name: 'One-arm KB press',
+  'pike-pushup': {
+    id: 'pike-pushup',
+    name: 'Pike push-up',
     kind: 'reps',
     muscle: 'push',
-    main: true,
-    sets: 3,
-    maxSets: 4,
     min: 6,
     max: 12,
-    restSeconds: 90,
     rirFloor: 1,
-    usesBand: false,
     cues: [
-      'Rack: straight wrist, vertical forearm',
-      'Squeeze glutes, brace, ribs down',
-      'Press up and slightly back, bicep by ear',
-      'Lower under control'
+      'Hips high in an inverted V',
+      'Head travels forward to make a triangle with the hands',
+      'Elbows about 45° from the body',
+      'Push back up and away'
     ],
     ladder: [
-      { id: 'half-kneeling-press', name: 'Half-kneeling one-arm KB press', demo: 'press', perSide: true, tempo: '2-0-1' },
-      { id: 'standing-press', name: 'Standing one-arm KB press', demo: 'press', perSide: true, tempo: '2-0-1' },
-      { id: 'tempo-press', name: 'Pause press (2 s at the top, 3 s down)', demo: 'press', perSide: true, tempo: '3-2-1' }
+      { id: 'incline-pike-pushup', name: 'Incline pike push-up', demo: 'pike', tempo: '2-0-1', hint: 'Hands on a chair seat or the sofa.' },
+      { id: 'pike-pushup', name: 'Pike push-up', demo: 'pike', tempo: '2-0-1' },
+      { id: 'feet-elevated-pike-pushup', name: 'Feet-elevated pike push-up', demo: 'pike', tempo: '2-0-1', hint: 'Feet on a chair or step, hips stacked over the shoulders.' },
+      { id: 'pause-pike-pushup', name: 'Pause pike push-up (2 s at the bottom)', demo: 'pike', tempo: '3-2-1' }
     ],
-    start: 'half-kneeling-press'
-  },
-  row: {
-    id: 'row',
-    name: 'Bent-over band row',
-    kind: 'reps',
-    muscle: 'pull',
-    main: true,
-    sets: 3,
-    maxSets: 4,
-    min: 10,
-    max: 20,
-    restSeconds: 90,
-    rirFloor: 0,
-    usesBand: true,
-    cues: [
-      'Stand on the band, hinge ~45°, flat back',
-      'Elbows to back pockets, squeeze blades',
-      'No shrug, torso still',
-      '2–3 s return'
-    ],
-    ladder: [
-      { id: 'band-row', name: 'Two-arm bent-over band row', demo: 'row', banded: true, tempo: '1-1-3' },
-      { id: 'band-row-short', name: 'Band row, shorter grip', demo: 'row', banded: true, tempo: '1-1-3', hint: 'Choke up on the band for more tension.' },
-      { id: 'band-row-double', name: 'Band row, two bands', demo: 'row', banded: true, tempo: '1-1-3' },
-      { id: 'band-row-squeeze', name: 'Band row, 2 s squeeze at the top', demo: 'row', banded: true, tempo: '1-2-3' },
-      { id: 'kb-row', name: 'One-arm 16 kg KB row', demo: 'row', perSide: true, tempo: '1-1-3' }
-    ],
-    start: 'band-row'
-  },
-  'pull-apart': {
-    id: 'pull-apart',
-    name: 'Band pull-apart / face pull',
-    kind: 'reps',
-    muscle: 'pull',
-    main: false,
-    sets: 2,
-    maxSets: 3,
-    min: 15,
-    max: 25,
-    restSeconds: 60,
-    rirFloor: 0,
-    usesBand: true,
-    cues: [
-      'Straight arms (elbows high for face pull)',
-      'Blades back and down',
-      '1 s hold, slow return'
-    ],
-    ladder: [
-      { id: 'pull-apart', name: 'Band pull-apart', demo: 'pull-apart', banded: true, tempo: '1-1-2' },
-      { id: 'face-pull', name: 'Band face pull', demo: 'face-pull', banded: true, tempo: '1-1-2', hint: 'Anchor the band at face height (door anchor).' }
-    ],
-    start: 'pull-apart'
-  },
-  'scap-pushup': {
-    id: 'scap-pushup',
-    name: 'Scapular push-up',
-    kind: 'reps',
-    muscle: 'core',
-    main: false,
-    sets: 2,
-    maxSets: 2,
-    min: 8,
-    max: 15,
-    restSeconds: 60,
-    rirFloor: 0,
-    usesBand: false,
-    cues: [
-      'High plank, arms locked',
-      'Sink the chest by squeezing the blades, no elbow bend',
-      'Push the floor away to spread the blades',
-      'Slow, neck neutral'
-    ],
-    ladder: [
-      { id: 'scap-pushup', name: 'Scapular push-up', demo: 'pushup', tempo: '2-1-2' },
-      { id: 'scap-pushup-band', name: 'Banded scapular push-up', demo: 'pushup', banded: true, tempo: '2-1-2' }
-    ],
-    start: 'scap-pushup'
-  },
-  'dead-bug': {
-    id: 'dead-bug',
-    name: 'Dead bug',
-    kind: 'reps',
-    muscle: 'core',
-    main: false,
-    sets: 2,
-    maxSets: 3,
-    min: 6,
-    max: 10,
-    restSeconds: 60,
-    rirFloor: 0,
-    usesBand: false,
-    cues: [
-      'Low back pressed to the floor',
-      'Extend opposite arm and leg slowly on the exhale',
-      'Stop before the back arches'
-    ],
-    ladder: [
-      { id: 'dead-bug', name: 'Dead bug', demo: 'dead-bug', perSide: true, tempo: '3-1-3' },
-      { id: 'dead-bug-kb', name: 'Dead bug holding the KB', demo: 'dead-bug', perSide: true, tempo: '3-1-3' }
-    ],
-    start: 'dead-bug'
+    start: 'incline-pike-pushup'
   },
   'one-arm-row': {
     id: 'one-arm-row',
-    name: 'Single-arm band row',
+    name: 'Band row',
     kind: 'reps',
     muscle: 'pull',
-    main: true,
-    sets: 3,
-    maxSets: 4,
     min: 10,
     max: 20,
-    restSeconds: 90,
     rirFloor: 0,
-    usesBand: true,
     cues: [
-      'Band under the opposite foot, staggered stance, flat back',
-      'Pull the elbow back past the ribs, not out to the side',
-      'Squeeze the shoulder blade back and down at the top',
-      '2–3 s return, no torso twist'
+      'Anchor at chest height, step back until the band is taut at full reach',
+      'Elbows to back pockets',
+      'Squeeze the shoulder blades, no shrug',
+      '2–3 s return'
     ],
     ladder: [
-      { id: 'one-arm-band-row', name: 'Single-arm band row', demo: 'one-arm-row', perSide: true, banded: true, tempo: '1-1-3' },
-      { id: 'one-arm-band-row-squeeze', name: 'Single-arm band row, 2 s squeeze', demo: 'one-arm-row', perSide: true, banded: true, tempo: '1-2-3' },
-      { id: 'one-arm-kb-row', name: 'One-arm 16 kg KB row', demo: 'one-arm-row', perSide: true, tempo: '1-1-3', hint: 'Free hand on a chair or knee for support.' }
+      { id: 'door-band-row', name: 'Door-anchored band row', demo: 'door-row', banded: true, tempo: '1-1-3', hint: 'Both handles, standing, door anchor at chest height.' },
+      { id: 'door-one-arm-row', name: 'Single-arm door-anchored band row', demo: 'door-row-one-arm', perSide: true, banded: true, tempo: '1-1-3' },
+      { id: 'one-arm-band-row', name: 'Single-arm bent-over band row', demo: 'one-arm-row', perSide: true, banded: true, tempo: '1-1-3', cues: BENT_OVER_ROW_CUES },
+      { id: 'one-arm-band-row-squeeze', name: 'Single-arm bent-over band row, 2 s squeeze', demo: 'one-arm-row', perSide: true, banded: true, tempo: '1-2-3', cues: BENT_OVER_ROW_CUES },
+      { id: 'one-arm-kb-row', name: 'One-arm 16 kg KB row', demo: 'one-arm-row', perSide: true, tempo: '1-1-3', hint: 'Free hand on a chair or knee for support.', cues: BENT_OVER_ROW_CUES }
     ],
-    start: 'one-arm-band-row'
-  },
-  'band-press': {
-    id: 'band-press',
-    name: 'Single-arm band overhead press',
-    kind: 'reps',
-    muscle: 'push',
-    main: true,
-    sets: 3,
-    maxSets: 4,
-    min: 8,
-    max: 15,
-    restSeconds: 90,
-    rirFloor: 1,
-    usesBand: true,
-    cues: [
-      'Band under the same-side foot, hand at the shoulder',
-      'Glutes tight, ribs down, no leaning back',
-      'Press straight up, bicep by the ear',
-      'Lower slowly against the band'
-    ],
-    ladder: [
-      { id: 'one-arm-band-press', name: 'Single-arm band overhead press', demo: 'band-press', perSide: true, banded: true, tempo: '2-0-1' },
-      { id: 'one-arm-band-press-pause', name: 'Band overhead press, 2 s hold at the top', demo: 'band-press', perSide: true, banded: true, tempo: '3-2-1' }
-    ],
-    start: 'one-arm-band-press'
-  },
-  'floor-press': {
-    id: 'floor-press',
-    name: 'KB floor press',
-    kind: 'reps',
-    muscle: 'push',
-    main: true,
-    sets: 3,
-    maxSets: 4,
-    min: 8,
-    max: 12,
-    restSeconds: 90,
-    rirFloor: 1,
-    usesBand: false,
-    cues: [
-      'Lie on your back, knees bent, KB in the rack, wrist straight',
-      'Elbow about 45° from the body',
-      'Lower until the upper arm touches the floor, pause softly',
-      'Press straight up over the shoulder'
-    ],
-    ladder: [
-      { id: 'kb-floor-press', name: 'One-arm KB floor press', demo: 'floor-press', perSide: true, tempo: '2-1-1' },
-      { id: 'kb-floor-press-tempo', name: 'KB floor press, 3 s down + 2 s pause', demo: 'floor-press', perSide: true, tempo: '3-2-1' },
-      { id: 'kb-floor-press-legs-up', name: 'KB floor press, legs straight (no leg drive)', demo: 'floor-press', perSide: true, tempo: '3-1-1' }
-    ],
-    start: 'kb-floor-press'
-  },
-  'band-good-morning': {
-    id: 'band-good-morning',
-    name: 'Band good morning',
-    kind: 'reps',
-    muscle: 'hinge',
-    main: false,
-    sets: 1,
-    maxSets: 1,
-    min: 10,
-    max: 10,
-    restSeconds: 0,
-    rirFloor: 3,
-    usesBand: true,
-    cues: [
-      'Medium band under the feet and behind the neck',
-      'Soft knees, push the hips back, flat back',
-      'Stop at the hamstring stretch, stand tall by squeezing glutes'
-    ],
-    ladder: [{ id: 'band-good-morning', name: 'Band good morning', demo: 'good-morning' }],
-    start: 'band-good-morning',
-    warmup: true
-  },
-  'worlds-greatest-stretch': {
-    id: 'worlds-greatest-stretch',
-    name: 'World’s greatest stretch',
-    kind: 'reps',
-    muscle: 'core',
-    main: false,
-    sets: 1,
-    maxSets: 1,
-    min: 4,
-    max: 4,
-    restSeconds: 0,
-    rirFloor: 3,
-    usesBand: false,
-    cues: [
-      'Long lunge, back knee off the floor',
-      'Same-side elbow down toward the instep',
-      'Rotate and reach that arm to the ceiling, eyes follow the hand',
-      'Slow, breathe out into each position'
-    ],
-    ladder: [{ id: 'worlds-greatest-stretch', name: 'World’s greatest stretch', demo: 'worlds-greatest-stretch', perSide: true }],
-    start: 'worlds-greatest-stretch',
-    warmup: true
+    start: 'door-band-row'
   },
   swing: {
     id: 'swing',
-    name: 'KB swing EMOM',
-    kind: 'emom',
+    name: 'KB swing',
+    kind: 'reps',
     muscle: 'conditioning',
-    main: false,
-    sets: 6,
-    maxSets: 10,
     min: 10,
     max: 15,
-    restSeconds: 0,
     rirFloor: 1,
-    usesBand: false,
     cues: [
       'Hinge, not squat: hike the bell back',
       'Snap the hips, arms are ropes, bell to chest height',
@@ -436,23 +189,19 @@ export const EXERCISES: Record<string, Exercise> = {
     ],
     ladder: [
       { id: 'two-arm-swing', name: 'Two-arm KB swing', demo: 'swing' },
-      { id: 'one-arm-swing', name: 'One-arm KB swing (alternate each minute)', demo: 'swing' }
+      { id: 'one-arm-swing', name: 'One-arm KB swing (alternate each round)', demo: 'swing' }
     ],
-    start: 'two-arm-swing'
+    start: 'two-arm-swing',
+    finisher: true
   },
   plank: {
     id: 'plank',
     name: 'Plank',
     kind: 'hold',
     muscle: 'core',
-    main: false,
-    sets: 2,
-    maxSets: 2,
-    min: 20,
+    min: 30,
     max: 45,
-    restSeconds: 60,
     rirFloor: 0,
-    usesBand: false,
     cues: [
       'Elbows under shoulders',
       'Squeeze glutes and quads, ribs down',
@@ -463,50 +212,99 @@ export const EXERCISES: Record<string, Exercise> = {
       { id: 'rkc-plank', name: 'RKC plank (max tension)', demo: 'plank', hint: 'Pull elbows toward toes, squeeze everything.' },
       { id: 'long-lever-plank', name: 'Long-lever plank', demo: 'plank', hint: 'Elbows a hand-width ahead of the shoulders.' }
     ],
-    start: 'plank'
+    start: 'plank',
+    finisher: true
+  },
+  'pull-apart': {
+    id: 'pull-apart',
+    name: 'Band pull-apart',
+    kind: 'reps',
+    muscle: 'pull',
+    min: 15,
+    max: 25,
+    rirFloor: 0,
+    cues: [
+      'Straight arms (elbows high for face pull)',
+      'Blades back and down',
+      '1 s hold, slow return'
+    ],
+    ladder: [
+      { id: 'pull-apart', name: 'Band pull-apart', demo: 'pull-apart', banded: true, tempo: '1-1-2' },
+      { id: 'face-pull', name: 'Band face pull', demo: 'face-pull', banded: true, tempo: '1-1-2', hint: 'Anchor the band at face height (door anchor).' }
+    ],
+    start: 'pull-apart',
+    warmup: true
+  },
+  'worlds-greatest-stretch': {
+    id: 'worlds-greatest-stretch',
+    name: 'World’s greatest stretch',
+    kind: 'reps',
+    muscle: 'core',
+    min: 4,
+    max: 4,
+    rirFloor: 3,
+    cues: [
+      'Long lunge, back knee off the floor',
+      'Same-side elbow down toward the instep',
+      'Rotate and reach that arm to the ceiling, eyes follow the hand',
+      'Slow, breathe out into each position'
+    ],
+    ladder: [{ id: 'worlds-greatest-stretch', name: 'World’s greatest stretch', demo: 'worlds-greatest-stretch', perSide: true }],
+    start: 'worlds-greatest-stretch',
+    warmup: true
+  },
+  'band-good-morning': {
+    id: 'band-good-morning',
+    name: 'Band good morning',
+    kind: 'reps',
+    muscle: 'hinge',
+    min: 10,
+    max: 10,
+    rirFloor: 3,
+    cues: [
+      'Medium band under the feet and behind the neck',
+      'Soft knees, push the hips back, flat back',
+      'Stop at the hamstring stretch, stand tall by squeezing glutes'
+    ],
+    ladder: [{ id: 'band-good-morning', name: 'Band good morning', demo: 'good-morning' }],
+    start: 'band-good-morning',
+    warmup: true
   }
 };
 
-export const WORKOUTS: Record<PlanId, readonly string[]> = {
-  A: ['squat', 'pushup', 'row', 'rdl', 'pull-apart', 'dead-bug', 'scap-pushup'],
-  B: ['split-squat', 'rdl', 'press', 'row', 'pushup', 'swing', 'plank']
-};
-
 /**
- * Quick: a 20–25 min circuit for busy days. Same exercise ids as A/B, so
- * history and ladders are shared; only rest and rounds differ.
+ * The workout: 3 rounds of a 4-exercise circuit, so each muscle gets
+ * 3 rounds × 3 sessions = 9 hard sets a week.
  */
-export const QUICK_ROUNDS = 3;
-export const QUICK_REST_STEPS: readonly number[] = [90, 75, 60, 45];
-export const QUICK_FINISHER = { rounds: 3, swing: 'swing', swings: 15, plank: 'plank', plankMin: 30, plankMax: 45 } as const;
-export const QUICK_WARMUP: readonly { exercise: string; amount: string }[] = [
+export const ROUNDS = 3;
+export const DELOAD_ROUNDS = 2;
+export const REST_STEPS: readonly number[] = [90, 75, 60, 45];
+export const FINISHER = { rounds: 3, swing: 'swing', swings: 15, plank: 'plank', plankMin: 30, plankMax: 45 } as const;
+export const WARMUP: readonly { exercise: string; amount: string }[] = [
   { exercise: 'pull-apart', amount: '15, light band' },
   { exercise: 'worlds-greatest-stretch', amount: '4 per side' },
   { exercise: 'band-good-morning', amount: '10, medium band' }
 ];
-/** Exercises the Quick circuit can contain, for the Progress tab. */
-export const QUICK_POOL: readonly string[] = ['squat', 'rdl', 'pushup', 'floor-press', 'band-press', 'one-arm-row'];
+/** Exercises the circuit can contain. */
+export const CIRCUIT_POOL: readonly string[] = ['squat', 'rdl', 'pushup', 'pike-pushup', 'one-arm-row'];
 
-/**
- * The 4-exercise circuit. Every second Quick session swaps the push-up for a
- * press, alternating KB floor press and band overhead press.
- */
-export function quickCircuit(previousQuickSessions: number): string[] {
-  const slot = previousQuickSessions % 2 === 0 ? 'pushup' : previousQuickSessions % 4 === 1 ? 'floor-press' : 'band-press';
-  return ['squat', 'rdl', slot, 'one-arm-row'];
+/** The 4-exercise circuit. Every second session swaps the push-up for the pike push-up (shoulders). */
+export function circuitFor(previousSessions: number): string[] {
+  return ['squat', 'rdl', previousSessions % 2 === 0 ? 'pushup' : 'pike-pushup', 'one-arm-row'];
 }
 
-export function nextQuickRest(rest: number): number {
-  return QUICK_REST_STEPS.find((step) => step < rest) ?? QUICK_REST_STEPS.at(-1)!;
+export function nextRest(rest: number): number {
+  return REST_STEPS.find((step) => step < rest) ?? REST_STEPS.at(-1)!;
 }
 
-export const WARMUP: readonly string[] = [
-  '1–2 min easy movement (march, arm circles, jumping jacks)',
-  '10 band pull-aparts',
-  '10 scapular push-ups',
-  '10 hip hinges or KB halos',
-  '1 easy ramp-up set of the first exercise'
-];
+/** Shown when "too hard" is pressed on the easiest step and lightest band. */
+export const EASIER_ADVICE: Record<string, string> = {
+  squat: 'Squat down to a chair or sofa, or hold the bell lower at the chest.',
+  rdl: 'Shorten the range: stop just below the knees, bell close to the legs.',
+  pushup: 'Put your hands higher: kitchen counter, or a wall.',
+  'pike-pushup': 'Put your hands higher (sofa arm or table), or bend the knees a little.',
+  'one-arm-row': 'Step closer to the door to loosen the band.'
+};
 
 export function exercise(id: string): Exercise {
   const found = EXERCISES[id];
@@ -522,10 +320,6 @@ export function variantIndex(ex: Exercise, variantId: string): number {
 
 export function findVariant(ex: Exercise, variantId: string): Variant {
   return ex.ladder[variantIndex(ex, variantId)] ?? ex.ladder[0]!;
-}
-
-export function otherWorkout(workout: PlanId): PlanId {
-  return workout === 'A' ? 'B' : 'A';
 }
 
 export function unitLabel(ex: Exercise, variant: Variant): string {

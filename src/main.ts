@@ -38,12 +38,14 @@ import {
 import { DEFAULT_PREFS, normalizePrefs, type Prefs } from './prefs';
 import {
   BAND_LEVELS,
+  CIRCUIT_POOL,
+  EASIER_ADVICE,
+  EXERCISES,
+  circuitFor,
   exercise,
   findVariant,
-  quickCircuit,
   remoteDemoFrame,
   type DemoKey,
-  type PlanId,
   type WorkoutId
 } from './program';
 import { createQueue, createSlot } from './queue';
@@ -54,7 +56,6 @@ import {
   clampBand,
   createDraft,
   finisherDone,
-  isComplete,
   isDraft,
   logSet,
   setInput,
@@ -67,7 +68,7 @@ import {
   averageSteps,
   latest,
   latestWeight,
-  nextWorkout,
+  lastSession,
   proteinTarget,
   quickSessionCount,
   rawWeights,
@@ -89,6 +90,7 @@ import {
   renderToday,
   renderWarmup,
   type InputState,
+  type RetiredExercise,
   type Tab
 } from './views';
 
@@ -115,8 +117,7 @@ const signInRequired = config.authProviders.length > 0;
 
 type Timer =
   | { mode: 'idle' }
-  | { mode: 'hold'; startedAt: number; alerted: boolean; lastBeep: number }
-  | { mode: 'emom'; startedAt: number; lastBeep: number };
+  | { mode: 'hold'; startedAt: number; alerted: boolean; lastBeep: number };
 
 type State = {
   sets: SetRecord[];
@@ -124,7 +125,6 @@ type State = {
   tab: Tab;
   draft: Draft | null;
   prefs: Prefs;
-  chosen: PlanId | null;
   input: InputState;
   timer: Timer;
   progressed: Record<string, Change>;
@@ -138,7 +138,6 @@ const state: State = {
   tab: 'today',
   draft: null,
   prefs: normalizePrefs(prefsSlot.load() ?? DEFAULT_PREFS),
-  chosen: null,
   input: { value: 0, rir: null, band: null },
   timer: { mode: 'idle' },
   progressed: {},
@@ -162,6 +161,24 @@ function tabFromHash(): Tab {
 }
 
 // ---------- data ----------
+
+/** Exercises in the log that the current plan no longer has (retired A/B plan, band press). */
+function retiredExercises(sets: readonly LoggedSet[]): RetiredExercise[] {
+  const found = new Map<string, { days: Set<string>; last: string }>();
+  for (const set of sets) {
+    const known = EXERCISES[set.exercise];
+    if (known && (CIRCUIT_POOL.includes(known.id) || known.finisher)) {
+      continue;
+    }
+    const entry = found.get(set.exercise) ?? { days: new Set<string>(), last: set.date };
+    entry.days.add(`${set.date}|${set.workout ?? ''}`);
+    entry.last = set.date > entry.last ? set.date : entry.last;
+    found.set(set.exercise, entry);
+  }
+  return [...found.entries()]
+    .map(([exerciseId, entry]) => ({ exercise: exerciseId, sessions: entry.days.size, last: entry.last }))
+    .sort((a, b) => b.last.localeCompare(a.last));
+}
 
 function pendingSets(): SetInput[] {
   return queue.items().filter((item) => item.table === 'sets').map((item) => item.input as SetInput);
@@ -307,7 +324,7 @@ function showShell(): void {
   }, true);
 }
 
-function toast(message: string, tone: 'info' | 'error' = 'info'): void {
+function toast(message: string, tone: 'info' | 'error' = 'info', durationMs?: number): void {
   const node = document.querySelector<HTMLElement>('#toast');
   if (!node) {
     return;
@@ -318,7 +335,7 @@ function toast(message: string, tone: 'info' | 'error' = 'info'): void {
   window.clearTimeout(Number(node.dataset.timer));
   node.dataset.timer = String(window.setTimeout(() => {
     node.hidden = true;
-  }, tone === 'error' ? 6000 : 2500));
+  }, durationMs ?? (tone === 'error' ? 6000 : 2500)));
 }
 
 function render(): void {
@@ -345,13 +362,11 @@ function render(): void {
     case 'today': {
       const exerciseStates = states();
       const days = sessionLog();
-      const next = nextWorkout(days, date);
       const deload = deloadStatus(exerciseStates, days[0]?.date ?? null, date, state.prefs.deloadFrom);
       view.innerHTML = renderToday({
         today: date,
-        next,
-        chosen: state.chosen ?? next.workout,
-        quick: quickCircuit(quickSessionCount(days, date)),
+        last: lastSession(days, date),
+        circuit: circuitFor(quickSessionCount(days, date)),
         states: exerciseStates,
         deload,
         deloadUntil: state.prefs.deloadFrom === null ? null : addDays(state.prefs.deloadFrom, 6),
@@ -363,7 +378,7 @@ function render(): void {
       break;
     }
     case 'progress':
-      view.innerHTML = renderProgress(states(), state.prefs);
+      view.innerHTML = renderProgress(states(), state.prefs, retiredExercises(allSets()));
       break;
     case 'body': {
       const body = allBody();
@@ -406,7 +421,7 @@ function currentItem(): DraftExercise | undefined {
 }
 
 function inFinisher(draft: Draft): boolean {
-  return draft.circuit !== undefined && draft.step === draft.circuit.size;
+  return draft.step === draft.circuit.size;
 }
 
 function renderPlayer(view: HTMLElement, draft: Draft): void {
@@ -417,7 +432,7 @@ function renderPlayer(view: HTMLElement, draft: Draft): void {
   } else if (inFinisher(draft)) {
     view.innerHTML = renderFinisher(draft, BASE, state.input, state.timer.mode, activeIndex(draft), Date.now());
   } else {
-    view.innerHTML = renderExercise(draft, state.prefs, BASE, state.input, state.timer.mode);
+    view.innerHTML = renderExercise(draft, state.prefs, BASE, state.input);
   }
   renderRestLayer();
 }
@@ -429,11 +444,9 @@ function renderRestLayer(): void {
     layer.innerHTML = '';
     return;
   }
-  // In the circuit the position has already moved on: show what comes next.
-  const next = draft.circuit ? currentItem() : undefined;
-  const upNext = draft.circuit
-    ? inFinisher(draft) ? 'Finisher: swings + plank' : next ? findVariant(exercise(next.exercise), next.variant).name : null
-    : null;
+  // The position has already moved on: show what comes next.
+  const next = currentItem();
+  const upNext = inFinisher(draft) ? 'Finisher: swings + plank' : next ? findVariant(exercise(next.exercise), next.variant).name : null;
   layer.innerHTML = renderRest(draft.restEndsAt, draft.restTotal, Date.now(), upNext);
 }
 
@@ -449,20 +462,6 @@ function resetInput(): void {
     rir: lastRir ?? 2,
     band: variant.banded ? item.band ?? 2 : null
   };
-}
-
-function goToStep(step: number): void {
-  const draft = state.draft;
-  if (!draft) {
-    return;
-  }
-  stopTimer();
-  draft.step = Math.max(-1, Math.min(draft.exercises.length - 1, step));
-  enteredStep(draft);
-  resetInput();
-  saveDraft();
-  render();
-  window.scrollTo({ top: 0 });
 }
 
 /** Circuit navigation: next/previous exercise, round, or the finisher. */
@@ -485,26 +484,24 @@ function moveCircuit(direction: 1 | -1): void {
 }
 
 function enteredStep(draft: Draft): void {
-  if (draft.circuit && inFinisher(draft) && draft.circuit.finisherStartedAt === null) {
+  if (inFinisher(draft) && draft.circuit.finisherStartedAt === null) {
     draft.circuit.finisherStartedAt = Date.now();
   }
 }
 
-function startWorkout(quick = false): void {
+function startWorkout(): void {
   unlockAudio();
   const exerciseStates = states();
   const days = sessionLog();
   const date = today();
-  const workout: WorkoutId = quick ? 'Q' : state.chosen ?? nextWorkout(days, date).workout;
   const deload = deloadStatus(exerciseStates, days[0]?.date ?? null, date, state.prefs.deloadFrom);
   state.draft = createDraft({
-    workout,
     date,
     deload: deload.active,
     states: exerciseStates,
     sets: allSets(),
     now: Date.now(),
-    quickCount: quickSessionCount(days, date)
+    sessionCount: quickSessionCount(days, date)
   });
   state.progressed = {};
   saveDraft();
@@ -547,35 +544,16 @@ function logCurrentSet(values?: { value: number; rir: number | null }): void {
   const input = setInput(draft, item, set);
   queue.add(setKey(input), 'sets', input);
 
-  if (draft.circuit) {
-    logCircuitSet(draft, index, item);
-    return;
-  }
-
-  const lastExercise = draft.step === draft.exercises.length - 1;
-  if (ex.kind !== 'emom' && !(lastExercise && isComplete(item))) {
-    startRest(item.rest ?? ex.restSeconds);
-  }
-  saveDraft();
-  if (ex.kind !== 'emom') {
-    resetInput();
-    render();
-  } else {
-    setText('#emom-round', String(Math.min(item.prescription.sets, item.logged.length + 1)));
-  }
-  void sync();
+  logCircuitSet(draft, index, item);
 }
 
 function logCircuitSet(draft: Draft, index: number, item: DraftExercise): void {
   const circuit = draft.circuit;
-  if (!circuit) {
-    return;
-  }
   if (index < circuit.size) {
     // Exercise → rest → next exercise (or next round, or the finisher).
     circuitAdvance(draft);
     enteredStep(draft);
-    startRest(item.rest ?? exercise(item.exercise).restSeconds);
+    startRest(item.prescription.rest);
   } else if (finisherDone(draft)) {
     void sync();
     finishWorkout();
@@ -653,7 +631,6 @@ function finishWorkout(): void {
 
 function closeWorkout(): void {
   state.draft = null;
-  state.chosen = null;
   saveDraft();
   stopTimer();
   location.hash = 'today';
@@ -669,7 +646,7 @@ function adjustCurrent(direction: 1 | -1): void {
   const band = state.input.band ?? item.band;
   const next = adjust(item.exercise, { variant: item.variant, band }, direction);
   if (next.variant === item.variant && next.band === band) {
-    toast(direction === 1 ? 'Already the hardest step.' : 'Already the easiest step.');
+    toast(direction === 1 ? 'Already the hardest step.' : easiestHint(item.exercise), 'info', 6000);
     return;
   }
   if (next.variant !== item.variant && item.logged.length > 0) {
@@ -685,6 +662,11 @@ function adjustCurrent(direction: 1 | -1): void {
   resetInput();
   toast(`${findVariant(ex, next.variant).name}${next.band === null ? '' : `, band L${next.band}`}`);
   render();
+}
+
+/** "Too hard" on the easiest step and lightest band: never a dead end. */
+function easiestHint(exerciseId: string): string {
+  return `Easiest step already. ${EASIER_ADVICE[exerciseId] ?? 'Do fewer reps, or skip it today.'}`;
 }
 
 // ---------- timers ----------
@@ -759,35 +741,6 @@ function onTick(): void {
     return;
   }
 
-  if (timer.mode === 'emom') {
-    const item = draft.exercises[draft.step];
-    if (!item) {
-      return;
-    }
-    const elapsed = (now - timer.startedAt) / 1000;
-    if (elapsed < 0) {
-      setText('#emom-left', `Ready… ${Math.ceil(-elapsed)}`);
-      return;
-    }
-    const minute = Math.floor(elapsed / 60);
-    if (minute !== timer.lastBeep) {
-      timer.lastBeep = minute;
-      if (minute > 0) {
-        // The minute that just ended counts as a round.
-        logCurrentSet({ value: state.input.value, rir: null });
-      }
-      if (isComplete(item)) {
-        stopTimer();
-        alarm(signals());
-        render();
-        return;
-      }
-      tick(signals(), true);
-    }
-    setText('#emom-left', String(Math.max(1, 60 - Math.floor(elapsed % 60))));
-    return;
-  }
-
   // Tempo metronome: one click per second, accented at the start of each rep.
   const item = currentItem();
   if (state.prefs.tempoCue && item) {
@@ -829,9 +782,6 @@ async function onAction(event: Event): Promise<void> {
     case 'start':
       startWorkout();
       break;
-    case 'start-quick':
-      startWorkout(true);
-      break;
     case 'finish':
       if (confirm('Finish the workout now?')) {
         finishWorkout();
@@ -847,12 +797,6 @@ async function onAction(event: Event): Promise<void> {
         closeWorkout();
       }
       break;
-    case 'swap-workout': {
-      const current = state.chosen ?? nextWorkout(sessionLog(), today()).workout;
-      state.chosen = current === 'A' ? 'B' : 'A';
-      render();
-      break;
-    }
     case 'exit':
       stopTimer();
       location.hash = 'today';
@@ -867,22 +811,10 @@ async function onAction(event: Event): Promise<void> {
       break;
     case 'next':
       unlockAudio();
-      if (draft?.circuit) {
-        moveCircuit(1);
-      } else if (draft) {
-        if (draft.step === draft.exercises.length - 1) {
-          finishWorkout();
-        } else {
-          goToStep(draft.step + 1);
-        }
-      }
+      moveCircuit(1);
       break;
     case 'prev':
-      if (draft?.circuit) {
-        moveCircuit(-1);
-      } else if (draft) {
-        goToStep(draft.step - 1);
-      }
+      moveCircuit(-1);
       break;
     case 'step': {
       const item = currentItem();
@@ -958,15 +890,6 @@ async function onAction(event: Event): Promise<void> {
         }
       }
       break;
-    case 'emom-start':
-      unlockAudio();
-      state.timer = { mode: 'emom', startedAt: Date.now() + 3000, lastBeep: -1 };
-      render();
-      break;
-    case 'emom-stop':
-      stopTimer();
-      render();
-      break;
     case 'demo-toggle':
       demos.toggle();
       break;
@@ -998,7 +921,12 @@ async function onAction(event: Event): Promise<void> {
       if (!current) {
         break;
       }
-      const next = adjust(exerciseId, current, button.dataset.direction === '1' ? 1 : -1);
+      const direction = button.dataset.direction === '1' ? 1 : -1;
+      const next = adjust(exerciseId, current, direction);
+      if (next.variant === current.variant && next.band === current.band) {
+        toast(direction === 1 ? 'Already the hardest step.' : easiestHint(exerciseId), 'info', 6000);
+        break;
+      }
       state.prefs.overrides[exerciseId] = { ...next, date: today() };
       savePrefs();
       toast(`Next time: ${findVariant(exercise(exerciseId), next.variant).name}${next.band === null ? '' : ` (band L${next.band})`}`);

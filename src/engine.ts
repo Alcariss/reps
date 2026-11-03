@@ -2,19 +2,15 @@ import { addDays, daysBetween } from './dates';
 import type { SetInput } from './model';
 import {
   BAND_LEVELS,
+  DELOAD_ROUNDS,
   EXERCISES,
-  QUICK_FINISHER,
-  QUICK_REST_STEPS,
-  QUICK_ROUNDS,
-  SESSIONS_PER_WEEK,
-  WEEKLY_SET_CAP,
-  WORKOUTS,
+  REST_STEPS,
+  ROUNDS,
   exercise,
   findVariant,
-  nextQuickRest,
+  nextRest,
   variantIndex,
   type Exercise,
-  type Muscle,
   type WorkoutId
 } from './program';
 
@@ -22,20 +18,17 @@ import {
  * Progression engine. Everything is derived by replaying the logged sets in
  * date order, so there is no separate state to keep in sync.
  *
- * After each session, per exercise:
- * - progress: every working set reached the top of the range (≤2 RIR)
- *   → +1 set while weekly volume allows, else next band level, else next variant.
- * - easy: the same at ≥3 RIR → skip the extra set, go straight to more load.
- * - stall: total reps dropped two sessions in a row, or RIR 0 below the range
- *   → repeat once; still stalled → −1 set, or step back a band/variant.
- * - hold: keep the load and add reps (double progression).
- * - incomplete: fewer sets than prescribed (e.g. deload) → no change.
- *
- * Quick (Q) sessions share the ladders but progress differently first:
- * all rounds at the top of the range shortens that exercise's circuit rest
- * 90 → 75 → 60 → 45 s; at 45 s the load goes up (band or variant) and the
- * rest starts again at 90 s. Q never changes the A/B set count, and the
- * finisher (swings, plank) is logged for history only.
+ * After each session, per circuit exercise (3 rounds):
+ * - hold: reps inside the range → beat last time by a rep (double progression).
+ * - progress: every round at the top of the range (≤2 RIR) → the rest after
+ *   that exercise shortens 90 → 75 → 60 → 45 s; at 45 s the load goes up
+ *   (next band level, else next variant) and the rest starts again at 90 s.
+ * - easy: the same at ≥3 RIR → load goes up straight away.
+ * - stall: total reps dropped two sessions in a row at the same load, or
+ *   RIR 0 below the range → repeat once; still stalled → one band or step back.
+ * - incomplete: fewer rounds than 3 (deload, cut short) → no change.
+ * The finisher (swings, plank) is logged for history only. Sets from the
+ * earlier A/B plan replay under the same rules.
  */
 
 export type LoggedSet = Pick<SetInput, 'date' | 'exercise' | 'variant' | 'setNumber' | 'reps' | 'seconds' | 'rir' | 'band'>
@@ -45,16 +38,14 @@ export type Outcome = 'progress' | 'easy' | 'hold' | 'stall' | 'incomplete';
 
 export type Change =
   | 'start'
-  | 'set+'
+  | 'rest-'
   | 'band+'
   | 'variant+'
   | 'top'
   | 'reps+'
   | 'repeat'
-  | 'set-'
   | 'band-'
   | 'variant-'
-  | 'rest-'
   | 'manual'
   | 'none';
 
@@ -75,18 +66,16 @@ export type ExerciseState = {
   exercise: string;
   variant: string;
   band: number | null;
-  /** Prescribed working sets (EMOM: minutes). */
-  sets: number;
-  /** Suggested reps/seconds per set for the next session. */
+  /** Suggested reps/seconds per round for the next session. */
   target: number;
+  /** Rest after this exercise in the circuit, in seconds. */
+  rest: number;
   lastOutcome: Outcome | null;
   change: Change;
   stallStrikes: number;
   dropStreak: number;
   lastTotal: number | null;
   lastDate: string | null;
-  /** Rest between exercises in the Quick circuit, in seconds. */
-  quickRest: number;
   history: SessionSummary[];
 };
 
@@ -110,7 +99,7 @@ export function summarize(ex: Exercise, sets: readonly LoggedSet[]): SessionSumm
   const first = sets[0];
   return {
     date: first?.date ?? '',
-    workout: first?.workout ?? 'A',
+    workout: first?.workout ?? 'Q',
     variant: first?.variant ?? ex.start,
     band: bands.length > 0 ? Math.max(...bands) : null,
     sets: sets.length,
@@ -120,9 +109,9 @@ export function summarize(ex: Exercise, sets: readonly LoggedSet[]): SessionSumm
   };
 }
 
-/** How one session went against what was prescribed. */
-export function evaluate(ex: Exercise, sets: readonly LoggedSet[], prescribedSets: number): Outcome {
-  if (sets.length === 0 || sets.length < prescribedSets) {
+/** How one session went against the 3 prescribed rounds. */
+export function evaluate(ex: Exercise, sets: readonly LoggedSet[], rounds = ROUNDS): Outcome {
+  if (sets.length === 0 || sets.length < rounds) {
     return 'incomplete';
   }
   const values = sets.map((set) => valueOf(ex, set));
@@ -143,50 +132,23 @@ export function initialState(ex: Exercise): ExerciseState {
     exercise: ex.id,
     variant: variant.id,
     band: variant.banded ? 2 : null,
-    sets: ex.sets,
     target: ex.min,
+    rest: REST_STEPS[0]!,
     lastOutcome: null,
     change: 'start',
     stallStrikes: 0,
     dropStreak: 0,
     lastTotal: null,
     lastDate: null,
-    quickRest: QUICK_REST_STEPS[0]!,
     history: []
   };
 }
 
-/** Times per week an exercise comes up when A and B alternate 3×/week. */
-export function weeklyFrequency(exerciseId: string): number {
-  const perWorkout = SESSIONS_PER_WEEK / 2;
-  return (WORKOUTS.A.includes(exerciseId) ? perWorkout : 0) + (WORKOUTS.B.includes(exerciseId) ? perWorkout : 0);
-}
-
-/** Estimated hard sets per week for a muscle group at the current prescriptions. */
-export function weeklySets(muscle: Muscle, states: Record<string, ExerciseState>): number {
-  let total = 0;
-  for (const ex of Object.values(EXERCISES)) {
-    if (ex.muscle === muscle) {
-      total += (states[ex.id]?.sets ?? ex.sets) * weeklyFrequency(ex.id);
-    }
-  }
-  return total;
-}
-
-function hasVolumeRoom(ex: Exercise, states: Record<string, ExerciseState>): boolean {
-  if (ex.muscle === 'conditioning') {
-    return true;
-  }
-  return weeklySets(ex.muscle, states) + weeklyFrequency(ex.id) <= WEEKLY_SET_CAP;
-}
-
 function loadUp(ex: Exercise, state: ExerciseState): void {
   const variant = findVariant(ex, state.variant);
-  // Heavier load: the Quick circuit starts again with its longest rest.
-  state.quickRest = QUICK_REST_STEPS[0]!;
   if (variant.banded && state.band !== null && state.band < BAND_LEVELS) {
     state.band += 1;
-    state.sets = ex.sets;
+    state.rest = REST_STEPS[0]!;
     state.target = ex.min;
     state.change = 'band+';
     return;
@@ -196,30 +158,25 @@ function loadUp(ex: Exercise, state: ExerciseState): void {
     // A new banded step starts a bit lighter so the band can climb again.
     state.band = next.banded ? (variant.banded && state.band !== null ? Math.max(1, state.band - 2) : 1) : null;
     state.variant = next.id;
-    state.sets = ex.sets;
+    state.rest = REST_STEPS[0]!;
     state.target = ex.min;
     state.change = 'variant+';
     return;
   }
-  state.sets = Math.min(ex.maxSets, state.sets + 1);
   state.target = ex.max;
   state.change = 'top';
 }
 
 function stepBack(ex: Exercise, state: ExerciseState): void {
   const variant = findVariant(ex, state.variant);
-  state.quickRest = QUICK_REST_STEPS[0]!;
-  if (state.sets > ex.sets) {
-    state.sets -= 1;
-    state.change = 'set-';
-  } else if (variant.banded && state.band !== null && state.band > 1) {
+  state.rest = REST_STEPS[0]!;
+  if (variant.banded && state.band !== null && state.band > 1) {
     state.band -= 1;
     state.change = 'band-';
   } else if (variantIndex(ex, state.variant) > 0) {
     const previous = ex.ladder[variantIndex(ex, state.variant) - 1]!;
     state.variant = previous.id;
     state.band = previous.banded ? Math.max(1, state.band ?? 2) : null;
-    state.sets = ex.sets;
     state.change = 'variant-';
   } else {
     state.change = 'repeat';
@@ -227,43 +184,26 @@ function stepBack(ex: Exercise, state: ExerciseState): void {
   state.target = ex.min;
 }
 
-function apply(
-  ex: Exercise,
-  state: ExerciseState,
-  sets: readonly LoggedSet[],
-  states: Record<string, ExerciseState>
-): void {
+function apply(ex: Exercise, state: ExerciseState, sets: readonly LoggedSet[]): void {
   const summary = summarize(ex, sets);
-  if (summary.workout === 'Q' && (ex.id === QUICK_FINISHER.swing || ex.id === QUICK_FINISHER.plank)) {
-    // The Quick finisher is logged for history only; its A/B prescription stays.
-    state.lastDate = summary.date;
+  state.lastDate = summary.date;
+  if (ex.finisher) {
     state.history.push(summary);
     return;
   }
   // What was actually done wins: a manual switch shows up in the log.
   if (variantIndex(ex, summary.variant) >= 0 && summary.variant !== state.variant) {
     state.variant = summary.variant;
-    state.sets = Math.max(ex.sets, Math.min(state.sets, ex.maxSets));
   }
   if (findVariant(ex, state.variant).banded && summary.band !== null) {
     state.band = summary.band;
   }
 
-  if (summary.workout === 'Q') {
-    applyQuick(ex, state, sets, summary);
-    return;
-  }
-
-  let outcome = evaluate(ex, sets, state.sets);
-  const comparable = state.history.filter((session) => session.workout !== 'Q').at(-1);
-  const sameLoad = comparable !== undefined
-    && comparable.variant === summary.variant
-    && comparable.band === summary.band;
-
+  let outcome = evaluate(ex, sets);
+  const previous = state.history.at(-1);
+  const sameLoad = previous !== undefined && previous.variant === summary.variant && previous.band === summary.band;
   if (outcome === 'hold') {
-    state.dropStreak = sameLoad && state.lastTotal !== null && summary.total < state.lastTotal
-      ? state.dropStreak + 1
-      : 0;
+    state.dropStreak = sameLoad && state.lastTotal !== null && summary.total < state.lastTotal ? state.dropStreak + 1 : 0;
     if (state.dropStreak >= 2) {
       outcome = 'stall';
     }
@@ -273,10 +213,10 @@ function apply(
     case 'progress':
       state.stallStrikes = 0;
       state.dropStreak = 0;
-      if (state.sets < ex.maxSets && hasVolumeRoom(ex, states)) {
-        state.sets += 1;
-        state.target = Math.max(ex.min, ex.max - 2);
-        state.change = 'set+';
+      if (state.rest > REST_STEPS.at(-1)!) {
+        state.rest = nextRest(state.rest);
+        state.target = ex.max;
+        state.change = 'rest-';
       } else {
         loadUp(ex, state);
       }
@@ -287,7 +227,15 @@ function apply(
       loadUp(ex, state);
       break;
     case 'stall':
-      stall(ex, state, summary);
+      state.stallStrikes += 1;
+      if (state.stallStrikes >= 2) {
+        state.stallStrikes = 0;
+        state.dropStreak = 0;
+        stepBack(ex, state);
+      } else {
+        state.change = 'repeat';
+        state.target = Math.max(ex.min, Math.min(ex.max, summary.best));
+      }
       break;
     case 'hold':
       state.stallStrikes = 0;
@@ -303,60 +251,14 @@ function apply(
   if (outcome !== 'incomplete') {
     state.lastTotal = summary.total;
   }
-  state.lastDate = summary.date;
   state.history.push(summary);
-}
-
-function stall(ex: Exercise, state: ExerciseState, summary: SessionSummary): void {
-  state.stallStrikes += 1;
-  if (state.stallStrikes >= 2) {
-    state.stallStrikes = 0;
-    state.dropStreak = 0;
-    stepBack(ex, state);
-  } else {
-    state.change = 'repeat';
-    state.target = Math.max(ex.min, Math.min(ex.max, summary.best));
-  }
-}
-
-function applyQuick(ex: Exercise, state: ExerciseState, sets: readonly LoggedSet[], summary: SessionSummary): void {
-  state.lastDate = summary.date;
-  state.history.push(summary);
-  const outcome = evaluate(ex, sets, QUICK_ROUNDS);
-  switch (outcome) {
-    case 'progress':
-      state.stallStrikes = 0;
-      if (state.quickRest > QUICK_REST_STEPS.at(-1)!) {
-        state.quickRest = nextQuickRest(state.quickRest);
-        state.change = 'rest-';
-        state.target = ex.max;
-      } else {
-        loadUp(ex, state);
-      }
-      break;
-    case 'easy':
-      state.stallStrikes = 0;
-      loadUp(ex, state);
-      break;
-    case 'stall':
-      stall(ex, state, summary);
-      break;
-    case 'hold':
-      state.stallStrikes = 0;
-      state.change = 'reps+';
-      state.target = Math.max(ex.min, Math.min(ex.max, summary.best + 1));
-      break;
-    case 'incomplete':
-      break;
-  }
-  state.lastOutcome = outcome;
 }
 
 /** Groups sets by day, workout and exercise, oldest first. */
 export function groupSessions(sets: readonly LoggedSet[]): { date: string; exercise: string; sets: LoggedSet[] }[] {
   const groups = new Map<string, { date: string; exercise: string; sets: LoggedSet[] }>();
   for (const set of sets) {
-    const key = `${set.date}|${set.workout ?? 'A'}|${set.exercise}`;
+    const key = `${set.date}|${set.workout ?? 'Q'}|${set.exercise}`;
     const group = groups.get(key) ?? { date: set.date, exercise: set.exercise, sets: [] };
     group.sets.push(set);
     groups.set(key, group);
@@ -370,11 +272,14 @@ export function groupSessions(sets: readonly LoggedSet[]): { date: string; exerc
 export function replay(sets: readonly LoggedSet[], options: ReplayOptions = {}): Record<string, ExerciseState> {
   const states: Record<string, ExerciseState> = {};
   for (const ex of Object.values(EXERCISES)) {
-    states[ex.id] = initialState(ex);
+    if (!ex.warmup) {
+      states[ex.id] = initialState(ex);
+    }
   }
   const resetAfter = options.resetAfter ?? null;
 
   for (const session of groupSessions(sets)) {
+    // Exercises of the retired A/B plan (split squat, KB press, …) are skipped.
     const ex = EXERCISES[session.exercise];
     const state = states[session.exercise];
     if (!ex || !state) {
@@ -385,7 +290,7 @@ export function replay(sets: readonly LoggedSet[], options: ReplayOptions = {}):
       state.dropStreak = 0;
       state.lastTotal = null;
     }
-    apply(ex, state, session.sets, states);
+    apply(ex, state, session.sets);
   }
 
   for (const [exerciseId, override] of Object.entries(options.overrides ?? {})) {
@@ -397,8 +302,8 @@ export function replay(sets: readonly LoggedSet[], options: ReplayOptions = {}):
     if (state.lastDate === null || override.date >= state.lastDate) {
       state.variant = override.variant;
       state.band = findVariant(ex, override.variant).banded ? (override.band ?? state.band ?? 1) : null;
-      state.sets = ex.sets;
       state.target = ex.min;
+      state.rest = REST_STEPS[0]!;
       state.change = 'manual';
     }
   }
@@ -425,35 +330,25 @@ export function adjust(exerciseId: string, state: Pick<ExerciseState, 'variant' 
 }
 
 export type Prescription = {
-  sets: number;
+  rounds: number;
   min: number;
   max: number;
   target: number;
+  rest: number;
   rir: string;
 };
 
-/** One exercise of the Quick circuit: fixed rounds, rest from the engine. */
-export function prescribeQuick(ex: Exercise, state: ExerciseState, deload: boolean): Prescription & { rest: number } {
-  const base = prescribe(ex, { ...state, sets: QUICK_ROUNDS }, deload);
-  return { ...base, sets: deload ? QUICK_ROUNDS - 1 : QUICK_ROUNDS, rest: deload ? QUICK_REST_STEPS[0]! : state.quickRest };
-}
-
 export function prescribe(ex: Exercise, state: ExerciseState, deload: boolean): Prescription {
   if (deload) {
-    return {
-      sets: Math.max(1, Math.ceil(state.sets / 2)),
-      min: ex.min,
-      max: ex.max,
-      target: ex.min,
-      rir: '3–4 RIR (deload: easy)'
-    };
+    return { rounds: DELOAD_ROUNDS, min: ex.min, max: ex.max, target: ex.min, rest: REST_STEPS[0]!, rir: '3–4 RIR (deload: easy)' };
   }
   return {
-    sets: state.sets,
+    rounds: ROUNDS,
     min: ex.min,
     max: ex.max,
     target: state.target,
-    rir: ex.rirFloor >= 1 ? '1–3 RIR, never to failure' : '1–3 RIR (last set may go to 0)'
+    rest: state.rest,
+    rir: ex.rirFloor >= 1 ? '1–3 RIR, never to failure' : '1–3 RIR (last round may go to 0)'
   };
 }
 
@@ -496,20 +391,18 @@ export function deloadStatus(
 
 export const CHANGE_LABELS: Record<Change, string> = {
   start: 'Starting point',
-  'set+': 'Progress: +1 set',
+  'rest-': 'Progress: shorter rest',
   'band+': 'Progress: next band level',
   'variant+': 'Progress: next variation',
-  top: 'Top of the ladder: add a set or slow the tempo',
+  top: 'Top of the ladder: slow the tempo',
   'reps+': 'Beat last time by a rep',
   repeat: 'Stalled: repeat this load',
-  'set-': 'Stalled twice: −1 set for now',
   'band-': 'Stalled twice: one band lighter',
   'variant-': 'Stalled twice: one step back',
-  'rest-': 'Progress: shorter Quick rest',
   manual: 'Set by you',
   none: 'Same as last time'
 };
 
 export function isProgression(change: Change): boolean {
-  return change === 'set+' || change === 'band+' || change === 'variant+' || change === 'top' || change === 'rest-';
+  return change === 'band+' || change === 'variant+' || change === 'top' || change === 'rest-';
 }

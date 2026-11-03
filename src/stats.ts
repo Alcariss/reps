@@ -1,6 +1,6 @@
 import { addDays, daysBetween, startOfWeek } from './dates';
 import type { BodyRecord } from './model';
-import { otherWorkout, type PlanId, type WorkoutId } from './program';
+import type { WorkoutId } from './program';
 
 export type SessionInfo = { date: string; workout: WorkoutId };
 
@@ -13,33 +13,25 @@ export function trainingDays(sets: readonly SessionInfo[]): SessionInfo[] {
   return [...sessions.values()].sort((a, b) => a.date.localeCompare(b.date) || a.workout.localeCompare(b.workout));
 }
 
-/** Quick sessions logged up to and including `date`. */
+/** Quick sessions logged up to and including `date`; sets the push-up / press rotation. */
 export function quickSessionCount(days: readonly SessionInfo[], date: string): number {
   return days.filter((day) => day.workout === 'Q' && day.date <= date).length;
 }
 
-export type NextWorkout = {
-  /** A/B alternate; Quick sessions in between do not change the order. */
-  workout: PlanId;
+export type LastSession = {
   daysSince: number | null;
   /** Trained yesterday or today: 3×/week works best on non-consecutive days. */
   restSuggested: boolean;
   trainedToday: boolean;
 };
 
-export function nextWorkout(days: readonly SessionInfo[], today: string): NextWorkout {
+export function lastSession(days: readonly SessionInfo[], today: string): LastSession {
   const last = days.at(-1);
   if (!last) {
-    return { workout: 'A', daysSince: null, restSuggested: false, trainedToday: false };
+    return { daysSince: null, restSuggested: false, trainedToday: false };
   }
-  const lastPlan = days.filter((day): day is SessionInfo & { workout: PlanId } => day.workout !== 'Q').at(-1);
   const daysSince = daysBetween(last.date, today);
-  return {
-    workout: lastPlan ? otherWorkout(lastPlan.workout) : 'A',
-    daysSince,
-    restSuggested: daysSince <= 1,
-    trainedToday: daysSince === 0
-  };
+  return { daysSince, restSuggested: daysSince <= 1, trainedToday: daysSince === 0 };
 }
 
 /** Sessions this week; a day counts once even with two workouts. */

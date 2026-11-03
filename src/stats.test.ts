@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { BodyRecord } from './model';
 import {
   averageWeight,
-  nextWorkout,
+  lastSession,
   proteinTarget,
   quickSessionCount,
   rollingAverage,
@@ -30,16 +30,15 @@ describe('training days', () => {
     expect(trainingDays(sets)).toEqual([{ date: '2026-11-02', workout: 'A' }, { date: '2026-11-04', workout: 'B' }]);
   });
 
-  it('suggests the other workout and a rest day after training yesterday', () => {
+  it('reports days since the last session and suggests a rest day after training yesterday', () => {
     const days = trainingDays(sets);
-    expect(nextWorkout(days, '2026-11-05')).toEqual({ workout: 'A', daysSince: 1, restSuggested: true, trainedToday: false });
-    expect(nextWorkout(days, '2026-11-06')).toMatchObject({ workout: 'A', daysSince: 2, restSuggested: false });
-    expect(nextWorkout([], '2026-11-06')).toMatchObject({ workout: 'A', daysSince: null });
+    expect(lastSession(days, '2026-11-05')).toEqual({ daysSince: 1, restSuggested: true, trainedToday: false });
+    expect(lastSession(days, '2026-11-06')).toMatchObject({ daysSince: 2, restSuggested: false });
+    expect(lastSession([], '2026-11-06')).toMatchObject({ daysSince: null });
   });
 
-  it('keeps A/B alternating around Quick sessions', () => {
+  it('counts Quick sessions for the push-up / pike rotation', () => {
     const days = trainingDays([...sets, { date: '2026-11-06', workout: 'Q' }]);
-    expect(nextWorkout(days, '2026-11-07')).toMatchObject({ workout: 'A', daysSince: 1 });
     expect(quickSessionCount(days, '2026-11-06')).toBe(1);
     expect(quickSessionCount(days, '2026-11-05')).toBe(0);
   });
