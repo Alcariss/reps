@@ -90,6 +90,7 @@ import {
   renderSettings,
   renderToday,
   renderWarmup,
+  warmupIndex,
   type InputState,
   type RetiredExercise,
   type Tab
@@ -480,6 +481,9 @@ function moveCircuit(direction: 1 | -1): void {
     circuitAdvance(draft);
   } else {
     circuitBack(draft);
+    if (draft.step < 0 && draft.warmup.length > 0) {
+      draft.warmup[draft.warmup.length - 1] = false;
+    }
   }
   enteredStep(draft);
   resetInput();
@@ -778,12 +782,16 @@ async function onAction(event: Event): Promise<void> {
       stopTimer();
       location.hash = 'today';
       break;
-    case 'warmup':
-      if (draft) {
-        const index = Number(button.dataset.index);
-        draft.warmup[index] = !draft.warmup[index];
-        saveDraft();
-        render();
+    case 'warmup-done':
+      if (draft && draft.step < 0) {
+        draft.warmup[warmupIndex(draft)] = true;
+        if (draft.warmup.every(Boolean)) {
+          unlockAudio();
+          moveCircuit(1);
+        } else {
+          saveDraft();
+          render();
+        }
       }
       break;
     case 'next':
@@ -791,7 +799,14 @@ async function onAction(event: Event): Promise<void> {
       moveCircuit(1);
       break;
     case 'prev':
-      moveCircuit(-1);
+      if (draft && draft.step < 0) {
+        // Back within the warm-up: reopen the previous move.
+        draft.warmup[Math.max(0, warmupIndex(draft) - 1)] = false;
+        saveDraft();
+        render();
+      } else {
+        moveCircuit(-1);
+      }
       break;
     case 'pick': {
       // Update in place: a full render would restart the demo GIF.

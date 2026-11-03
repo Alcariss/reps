@@ -1055,3 +1055,10 @@ details summary {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
 }
+
+.warm-amount {
+  margin: 0.4rem 0 0;
+  text-align: center;
+  font-size: 2rem;
+  font-weight: 800;
+}
