@@ -17,20 +17,18 @@ e-mails on the allowlist.
 - **Workout player.** A 3-minute warm-up, one move per screen with its demo, then the circuit round by
   round, built to use mid-set: the exercise name, a big animated demo, a row
   of numbers to tap for the reps you did (prefilled from last time), a 0–4 RIR
-  picker and, for band work, the band level. One big button logs the round and
+  picker and, for band work, the prescribed band. One big button logs the round and
   starts the **rest timer** with "up next" (+15 s / skip; beep and vibration
   at the end). The finisher is timed: 15 swings straight into a **plank hold
-  timer**, 3 rounds. ⓘ opens the target, form cues and "too hard / too easy",
-  which moves one band level or variation (on the easiest step it says how to
-  make it lighter). 🎵 toggles **generated lo-fi beats** (jazzy 7th chords,
+  timer**, 3 rounds. ⓘ opens the target and form cues. 🎵 toggles **generated lo-fi beats** (jazzy 7th chords,
   bass, swung drums at 80 BPM, vinyl crackle), synthesised on the device with
   Web Audio in `src/music.ts`, so there are no audio files and it works
   offline; it plays only during a workout. The screen stays on. The finish screen shows which
   exercises earned a progression.
 - **Progress.** Per exercise: current step on the ladder and band, trend of
   total reps per session (inline SVG), best and total of the last session, next
-  prescription and rest, progressing/stalled flags, and easier/harder
-  overrides. Exercises from the earlier plan stay listed under "Earlier
+  prescription and rest, and progressing/stalled flags. Difficulty is never
+  set by hand: the engine decides it from what you log. Exercises from the earlier plan stay listed under "Earlier
   exercises".
 - **Body.** Weight (daily), waist (weekly), steps, protein. 7-day rolling
   average, weekly rate of change in %, protein target from your weight, a
@@ -84,9 +82,10 @@ listed.
   up (next band level, else the next variation, back to the bottom of the
   range) and the rest starts again at 90 s. At ≥3 RIR ("too easy") the load
   goes up straight away.
-- **Stall** when total reps drop two sessions in a row at the same load, or a
-  round fails (0 RIR) below the range: repeat once, then one band lighter or
-  one step back.
+- **Stall** when total reps drop two sessions in a row at the same load, or
+  any round misses the bottom of the range: repeat once, then one band lighter
+  or one step back. Stalled on the easiest step, the app says how to make the
+  movement lighter (e.g. hands higher for push-ups).
 - **Deload** every 6 weeks, or earlier when two exercises stall: one week of
   2 rounds at 90 s rest and 3–4 RIR. Stall counters restart after it.
 - The finisher is logged for history only. Never to failure on RDLs and

@@ -46,7 +46,6 @@ export type Change =
   | 'repeat'
   | 'band-'
   | 'variant-'
-  | 'manual'
   | 'none';
 
 export type SessionSummary = {
@@ -79,13 +78,9 @@ export type ExerciseState = {
   history: SessionSummary[];
 };
 
-export type Override = { variant: string; band: number | null; date: string };
-
 export type ReplayOptions = {
   /** Last day of the most recent deload; stall counters restart after it. */
   resetAfter?: string | null;
-  /** Manual "too hard / too easy" choices, newest wins over history of the same day or older. */
-  overrides?: Record<string, Override>;
 };
 
 function valueOf(ex: Exercise, set: LoggedSet): number {
@@ -120,7 +115,8 @@ export function evaluate(ex: Exercise, sets: readonly LoggedSet[], rounds = ROUN
     const minRir = Math.min(...sets.map((set) => set.rir ?? 2));
     return minRir >= 3 ? 'easy' : 'progress';
   }
-  if (sets.some((set) => set.rir === 0 && valueOf(ex, set) < ex.min)) {
+  // Missing the bottom of the range means the load is too heavy, whatever the RIR.
+  if (values.some((value) => value < ex.min)) {
     return 'stall';
   }
   return 'hold';
@@ -191,7 +187,7 @@ function apply(ex: Exercise, state: ExerciseState, sets: readonly LoggedSet[]): 
     state.history.push(summary);
     return;
   }
-  // What was actually done wins: a manual switch shows up in the log.
+  // What was actually logged wins (e.g. sets from an older version of the plan).
   if (variantIndex(ex, summary.variant) >= 0 && summary.variant !== state.variant) {
     state.variant = summary.variant;
   }
@@ -293,40 +289,7 @@ export function replay(sets: readonly LoggedSet[], options: ReplayOptions = {}):
     apply(ex, state, session.sets);
   }
 
-  for (const [exerciseId, override] of Object.entries(options.overrides ?? {})) {
-    const ex = EXERCISES[exerciseId];
-    const state = states[exerciseId];
-    if (!ex || !state || variantIndex(ex, override.variant) < 0) {
-      continue;
-    }
-    if (state.lastDate === null || override.date >= state.lastDate) {
-      state.variant = override.variant;
-      state.band = findVariant(ex, override.variant).banded ? (override.band ?? state.band ?? 1) : null;
-      state.target = ex.min;
-      state.rest = REST_STEPS[0]!;
-      state.change = 'manual';
-    }
-  }
   return states;
-}
-
-/** One step harder or easier on the ladder, for the "too easy / too hard" buttons. */
-export function adjust(exerciseId: string, state: Pick<ExerciseState, 'variant' | 'band'>, direction: 1 | -1): { variant: string; band: number | null } {
-  const ex = exercise(exerciseId);
-  const variant = findVariant(ex, state.variant);
-  const index = variantIndex(ex, variant.id);
-  if (variant.banded && state.band !== null) {
-    const band = state.band + direction;
-    if (band >= 1 && band <= BAND_LEVELS) {
-      return { variant: variant.id, band };
-    }
-  }
-  const next = ex.ladder[index + direction];
-  if (!next) {
-    return { variant: variant.id, band: state.band };
-  }
-  const band = next.banded ? (direction === 1 ? 1 : BAND_LEVELS) : null;
-  return { variant: next.id, band };
 }
 
 export type Prescription = {
@@ -399,7 +362,6 @@ export const CHANGE_LABELS: Record<Change, string> = {
   repeat: 'Stalled: repeat this load',
   'band-': 'Stalled twice: one band lighter',
   'variant-': 'Stalled twice: one step back',
-  manual: 'Set by you',
   none: 'Same as last time'
 };
 

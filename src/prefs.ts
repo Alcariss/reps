@@ -1,4 +1,3 @@
-import type { Override } from './engine';
 import { BAND_LEVELS } from './program';
 
 /** Device-local preferences. Training data lives on the server; these do not need to. */
@@ -10,7 +9,6 @@ export type Prefs = {
   music: boolean;
   /** First day of the current or last deload week. */
   deloadFrom: string | null;
-  overrides: Record<string, Override>;
 };
 
 export const DEFAULT_BAND_NAMES = ['Yellow (light)', 'Green', 'Red', 'Blue', 'Black (heavy)', 'Two bands'];
@@ -20,13 +18,12 @@ export const DEFAULT_PREFS: Prefs = {
   sound: true,
   vibrate: true,
   music: true,
-  deloadFrom: null,
-  overrides: {}
+  deloadFrom: null
 };
 
 export function normalizePrefs(value: unknown): Prefs {
   if (typeof value !== 'object' || value === null) {
-    return { ...DEFAULT_PREFS, overrides: {} };
+    return { ...DEFAULT_PREFS };
   }
   const record = value as Partial<Prefs>;
   const names = Array.isArray(record.bandNames) ? record.bandNames : [];
@@ -38,8 +35,7 @@ export function normalizePrefs(value: unknown): Prefs {
     sound: record.sound !== false,
     vibrate: record.vibrate !== false,
     music: record.music !== false,
-    deloadFrom: typeof record.deloadFrom === 'string' ? record.deloadFrom : null,
-    overrides: typeof record.overrides === 'object' && record.overrides !== null ? record.overrides : {}
+    deloadFrom: typeof record.deloadFrom === 'string' ? record.deloadFrom : null
   };
 }
 

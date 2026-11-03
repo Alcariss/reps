@@ -10,7 +10,7 @@ import { gifUrl } from './media';
 import type { BodyRecord } from './model';
 import { bandLabel, type Prefs } from './prefs';
 import {
-  BAND_LEVELS,
+  EASIER_ADVICE,
   CIRCUIT_POOL,
   DELOAD_ROUNDS,
   EXERCISES,
@@ -220,7 +220,7 @@ export function renderWarmup(draft: Draft, base: string): string {
       <div class="play-demo">${renderDemo(variant.demo, base)}</div>
       <p class="warm-amount">${escapeHtml(item.amount)}</p>
     </section>
-    ${formSheet({ title: variant.name, target: `Warm-up: ${item.amount}`, cues: variant.cues ?? ex.cues, logged: '', adjust: false })}
+    ${formSheet({ title: variant.name, target: `Warm-up: ${item.amount}`, cues: variant.cues ?? ex.cues, logged: '' })}
     ${playerBar(
       { action: 'warmup-done', label: last ? 'Done · start round 1 ▶' : 'Done ✓' },
       { back: index > 0, extra: { action: 'next', label: 'Skip all' } }
@@ -277,7 +277,7 @@ function playerBar(primary: BarAction, options: { back?: boolean; extra?: BarAct
 }
 
 /** Form cues and the "too hard / too easy" switches, out of the way until ⓘ is tapped. */
-function formSheet(options: { title: string; target: string; cues: readonly string[]; hint?: string; logged: string; adjust: boolean; extra?: string }): string {
+function formSheet(options: { title: string; target: string; cues: readonly string[]; hint?: string; logged: string; extra?: string }): string {
   return `
     <dialog class="sheet" id="form-sheet">
       <h2>${escapeHtml(options.title)}</h2>
@@ -287,11 +287,7 @@ function formSheet(options: { title: string; target: string; cues: readonly stri
       <ul class="cues">${options.cues.map((cue) => `<li>${escapeHtml(cue)}</li>`).join('')}</ul>
       ${options.extra ?? ''}
       ${options.logged}
-      ${options.adjust ? `
-        <div class="row adjust">
-          <button type="button" class="secondary" data-action="easier">Too hard: easier</button>
-          <button type="button" class="secondary" data-action="harder">Too easy: harder</button>
-        </div>` : ''}
+
       <button type="button" class="secondary close-sheet" data-action="close-sheet">Close</button>
     </dialog>
   `;
@@ -355,19 +351,6 @@ function rirPicker(selected: number | null, floor: number): string {
   `;
 }
 
-function bandPicker(prefs: Prefs, band: number): string {
-  const levels = Array.from({ length: BAND_LEVELS }, (_, index) => index + 1);
-  return `
-    <fieldset class="rir">
-      <legend>Band: ${escapeHtml(bandLabel(prefs, band))}</legend>
-      <div class="segmented">
-        ${levels.map((level) => `
-          <button type="button" data-action="band-pick" data-band="${level}" aria-pressed="${level === band ? 'true' : 'false'}">${level}</button>
-        `).join('')}
-      </div>
-    </fieldset>
-  `;
-}
 
 /** One circuit exercise in the current round. */
 export function renderExercise(draft: Draft, prefs: Prefs, base: string, input: InputState): string {
@@ -383,7 +366,7 @@ export function renderExercise(draft: Draft, prefs: Prefs, base: string, input: 
   const lastInCircuit = index === circuit.size - 1 && circuit.round >= circuit.rounds;
   const change = item.change === 'start' || item.change === 'none'
     ? ''
-    : `<span class="badge ${isProgression(item.change) ? 'up' : item.change.endsWith('-') || item.change === 'repeat' ? 'down' : ''}">${escapeHtml(CHANGE_LABELS[item.change])}</span>`;
+    : `<span class="badge ${isProgression(item.change) ? 'up' : item.change.endsWith('-') || item.change === 'repeat' ? 'down' : ''}">${escapeHtml(CHANGE_LABELS[item.change] ?? '')}</span>`;
   const p = item.prescription;
   const unit = unitLabel(ex, variant);
   const holdStep = ex.kind === 'hold' ? 5 : 1;
@@ -397,7 +380,7 @@ export function renderExercise(draft: Draft, prefs: Prefs, base: string, input: 
       ${ex.kind === 'reps' ? rirPicker(input.rir, ex.rirFloor) : ''}
     `;
   const band = variant.banded && input.band !== null
-    ? `<button type="button" class="badge band-badge" data-action="form">${escapeHtml(bandLabel(prefs, input.band))}</button>`
+    ? `<span class="badge">${escapeHtml(bandLabel(prefs, input.band))}</span>`
     : '';
   const primary: BarAction = complete
     ? { action: 'next', label: lastInCircuit ? 'Finisher ▶' : 'Next ▶' }
@@ -410,7 +393,7 @@ export function renderExercise(draft: Draft, prefs: Prefs, base: string, input: 
       <div class="play-demo">${renderDemo(variant.demo, base)}</div>
       ${logger}
     </section>
-    ${formSheet({ title: variant.name, target: targetLine(item, prefs), cues: variant.cues ?? ex.cues, hint: variant.hint, logged: loggedLine(item), adjust: true, extra: variant.banded && input.band !== null && !complete ? bandPicker(prefs, input.band) : '' })}
+    ${formSheet({ title: variant.name, target: targetLine(item, prefs), cues: variant.cues ?? ex.cues, hint: variant.hint, logged: loggedLine(item), extra: easierAdvice(item.exercise, variant.id, item.change) })}
     ${playerBar(primary, { extra: complete ? null : { action: 'next', label: 'Skip' } })}
   `;
 }
@@ -462,7 +445,7 @@ export function renderFinisher(draft: Draft, base: string, input: InputState, ti
       <div class="play-demo">${renderDemo(variant.demo, base)}</div>
       ${station}
     </section>
-    ${formSheet({ title, target: 'No rest: swings, straight into the plank, straight into the next round.', cues: ex.cues, logged: '', adjust: false })}
+    ${formSheet({ title, target: 'No rest: swings, straight into the plank, straight into the next round.', cues: ex.cues, logged: '' })}
     ${playerBar(primary, { extra: { action: 'finish', label: 'End' } })}
   `;
 }
@@ -516,6 +499,16 @@ function retiredName(id: string): string {
   return names[id] ?? id;
 }
 
+/** At the bottom of the ladder the engine can only repeat a stalled load; say how to make it lighter. */
+function easierAdvice(exerciseId: string, variantId: string, change: Change): string {
+  const ex = exercise(exerciseId);
+  const advice = EASIER_ADVICE[exerciseId];
+  if (change !== 'repeat' || ex.ladder[0]?.id !== variantId || !advice) {
+    return '';
+  }
+  return `<p class="note small">Stalled on the easiest step. ${escapeHtml(advice)}</p>`;
+}
+
 export function renderProgress(states: Record<string, ExerciseState>, prefs: Prefs, retired: readonly RetiredExercise[] = []): string {
   const cards = Object.values(EXERCISES).filter((ex) => !ex.warmup && (CIRCUIT_POOL.includes(ex.id) || ex.finisher)).map((ex) => {
     const state = states[ex.id];
@@ -534,11 +527,8 @@ export function renderProgress(states: Record<string, ExerciseState>, prefs: Pre
     const unit = ex.kind === 'hold' ? 's' : 'reps';
     const next = ex.finisher
       ? '<p class="small muted">Finisher: logged for history.</p>'
-      : `<p class="small">Next: ${ROUNDS} rounds × ${state.target} (${ex.min}–${ex.max}) · rest ${state.rest} s · ${escapeHtml(CHANGE_LABELS[state.change])}</p>
-        <div class="row adjust">
-          <button type="button" class="link" data-action="override" data-exercise="${ex.id}" data-direction="-1">Easier</button>
-          <button type="button" class="link" data-action="override" data-exercise="${ex.id}" data-direction="1">Harder</button>
-        </div>`;
+      : `<p class="small">Next: ${ROUNDS} rounds × ${state.target} (${ex.min}–${ex.max}) · rest ${state.rest} s · ${escapeHtml(CHANGE_LABELS[state.change] ?? '')}</p>
+        ${easierAdvice(ex.id, state.variant, state.change)}`;
     return `
       <li class="card progress-card">
         <div class="split">
@@ -565,7 +555,7 @@ export function renderProgress(states: Record<string, ExerciseState>, prefs: Pre
         </ul></details>`;
   return `
     <h2 class="section-title">Progress</h2>
-    <p class="muted small">Hit the top of the range in every round and the rest gets shorter (90 → 45 s), then the load goes up: a heavier band or the next variation. Two stalled sessions in a row step you back.</p>
+    <p class="muted small">Hit the top of the range in every round and the rest gets shorter (90 → 45 s), then the load goes up: a heavier band or the next variation. Miss the bottom of the range (or lose reps twice) and it is a stall; two stalls in a row step you back. Difficulty follows your log only.</p>
     <ul class="list">${cards}</ul>
     ${old}
   `;
