@@ -197,36 +197,34 @@ export function renderToday(view: {
   `;
 }
 
+/** The warm-up item on screen: the first one not yet done (the last once all are). */
+export function warmupIndex(draft: Draft): number {
+  const next = draft.warmup.findIndex((done) => !done);
+  return next === -1 ? WARMUP.length - 1 : next;
+}
+
+/** Warm-up, one move per screen, laid out like the exercise player. */
 export function renderWarmup(draft: Draft, base: string): string {
-  const done = draft.warmup.every(Boolean);
+  const index = warmupIndex(draft);
+  const item = WARMUP[index];
+  if (!item) {
+    return '';
+  }
+  const ex = exercise(item.exercise);
+  const variant = findVariant(ex, ex.start);
+  const last = index === WARMUP.length - 1;
   return `
-    <header class="player-head">
-      <button type="button" class="ghost" data-action="exit">✕</button>
-      <span>Warm-up</span>
-      <span></span>
-    </header>
-    <section class="card">
-      <h2>3-minute warm-up</h2>
-      <p class="muted">One round. Tap each item when done.</p>
-      <ul class="checklist">
-        ${WARMUP.map((item, index) => {
-          const ex = exercise(item.exercise);
-          const variant = findVariant(ex, ex.start);
-          return `
-          <li>
-            <button type="button" class="check ${draft.warmup[index] ? 'done' : ''}" data-action="warmup" data-index="${index}" aria-pressed="${draft.warmup[index] ? 'true' : 'false'}">
-              <span class="box" aria-hidden="true">${draft.warmup[index] ? '✓' : ''}</span>${escapeHtml(`${variant.name} · ${item.amount}`)}
-            </button>
-            <details class="howto">
-              <summary>How</summary>
-              ${renderDemo(variant.demo, base)}
-              <ul class="cues">${ex.cues.map((cue) => `<li>${escapeHtml(cue)}</li>`).join('')}</ul>
-            </details>
-          </li>`;
-        }).join('')}
-      </ul>
+    ${playerHead(`Warm-up · ${index + 1}/${WARMUP.length}`)}
+    <section class="exercise play">
+      <div class="play-title"><h2>${escapeHtml(variant.name)}</h2></div>
+      <div class="play-demo">${renderDemo(variant.demo, base)}</div>
+      <p class="warm-amount">${escapeHtml(item.amount)}</p>
     </section>
-    ${playerBar({ action: 'next', label: done ? 'Start round 1 ▶' : 'Warm-up done ▶' }, { back: false })}
+    ${formSheet({ title: variant.name, target: `Warm-up: ${item.amount}`, cues: variant.cues ?? ex.cues, logged: '', adjust: false })}
+    ${playerBar(
+      { action: 'warmup-done', label: last ? 'Done · start round 1 ▶' : 'Done ✓' },
+      { back: index > 0, extra: { action: 'next', label: 'Skip all' } }
+    )}
   `;
 }
 

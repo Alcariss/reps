@@ -14,7 +14,7 @@ e-mails on the allowlist.
   variation and rest, days since the last session (3×/week on non-consecutive
   days works best), this week's sessions and the 7-day average weight. A banner
   says when a deload week is due.
-- **Workout player.** A 3-minute warm-up with demos, then the circuit round by
+- **Workout player.** A 3-minute warm-up, one move per screen with its demo, then the circuit round by
   round, built to use mid-set: the exercise name, a big animated demo, a row
   of numbers to tap for the reps you did (prefilled from last time), a 0–4 RIR
   picker and, for band work, the band level. One big button logs the round and
