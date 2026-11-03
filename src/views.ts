@@ -235,29 +235,25 @@ function targetLine(item: DraftExercise, prefs: Prefs): string {
   const variant = findVariant(ex, item.variant);
   const p = item.prescription;
   const parts = [`${p.rounds} rounds × ${p.min}–${p.max} ${unitLabel(ex, variant)}`, `rest ${p.rest} s`];
-  if (variant.tempo) {
-    parts.push(`tempo ${variant.tempo}`);
-  }
   if (ex.kind === 'reps') {
     parts.push(p.rir);
   }
   if (variant.banded && item.band !== null) {
     parts.push(`band ${bandLabel(prefs, item.band)}`);
   }
-  return parts.map((part) => `<span>${escapeHtml(part)}</span>`).join('');
+  return parts.join(' · ');
 }
 
-function loggedChips(item: DraftExercise, prefs: Prefs): string {
+function loggedLine(item: DraftExercise): string {
   const ex = exercise(item.exercise);
   if (item.logged.length === 0) {
     return '';
   }
-  return `<ol class="chips">${item.logged.map((set) => {
+  const rounds = item.logged.map((set) => {
     const value = ex.kind === 'hold' ? `${set.seconds ?? 0} s` : `${set.reps ?? 0}`;
-    const rir = set.rir === null ? '' : ` @${set.rir}`;
-    const band = set.band === null ? '' : ` · L${set.band}`;
-    return `<li title="${escapeHtml(bandLabel(prefs, set.band))}">${escapeHtml(value + rir + band)}</li>`;
-  }).join('')}</ol>`;
+    return set.rir === null ? value : `${value} @${set.rir}`;
+  });
+  return `<p class="muted small">Logged: ${escapeHtml(rounds.join(', '))}</p>`;
 }
 
 type BarAction = { action: string; label: string; secondary?: boolean };
@@ -282,45 +278,75 @@ function playerBar(primary: BarAction, options: { back?: boolean; extra?: BarAct
   `;
 }
 
-function cuesBox(cues: readonly string[], hint: string | undefined): string {
+/** Form cues and the "too hard / too easy" switches, out of the way until ⓘ is tapped. */
+function formSheet(options: { title: string; target: string; cues: readonly string[]; hint?: string; logged: string; adjust: boolean; extra?: string }): string {
   return `
-    <details class="cues-box" open>
-      <summary>Form cues</summary>
-      ${hint ? `<p class="note">${escapeHtml(hint)}</p>` : ''}
-      <ul class="cues">${cues.map((cue) => `<li>${escapeHtml(cue)}</li>`).join('')}</ul>
-    </details>
+    <dialog class="sheet" id="form-sheet">
+      <h2>${escapeHtml(options.title)}</h2>
+      ${options.target ? `<p class="muted small">${escapeHtml(options.target)}</p>` : ''}
+      ${options.hint ? `<p class="note">${escapeHtml(options.hint)}</p>` : ''}
+      <h3>Form cues</h3>
+      <ul class="cues">${options.cues.map((cue) => `<li>${escapeHtml(cue)}</li>`).join('')}</ul>
+      ${options.extra ?? ''}
+      ${options.logged}
+      ${options.adjust ? `
+        <div class="row adjust">
+          <button type="button" class="secondary" data-action="easier">Too hard: easier</button>
+          <button type="button" class="secondary" data-action="harder">Too easy: harder</button>
+        </div>` : ''}
+      <button type="button" class="secondary close-sheet" data-action="close-sheet">Close</button>
+    </dialog>
   `;
 }
 
-/** Title and badges beside a small demo; tap it to pause, ⤢ to enlarge. */
-function exerciseTop(demo: DemoKey, base: string, title: string, extra: string): string {
+function playerHead(label: string, right = ''): string {
   return `
-    <div class="ex-top">
-      <div class="ex-title"><h2>${escapeHtml(title)}</h2>${extra}</div>
-      <div class="demo-wrap">
-        ${renderDemo(demo, base)}
-        <button type="button" class="zoom-button" data-action="zoom-demo" aria-label="Enlarge or shrink the demo">⤢</button>
-      </div>
-    </div>
+    <header class="player-head">
+      <button type="button" class="ghost" data-action="exit" aria-label="Leave workout">✕</button>
+      <span>${escapeHtml(label)}</span>
+      ${right}
+      <button type="button" class="ghost info" data-action="form" aria-label="Form cues">ⓘ</button>
+    </header>
   `;
 }
 
 export type InputState = { value: number; rir: number | null; band: number | null };
 
-function stepper(name: string, value: number, unit: string): string {
+/** The numbers worth offering: a little below the range up to a little above it. */
+export function pickOptions(min: number, max: number, current: number, step = 1): number[] {
+  const low = Math.max(step, Math.min(current, min - 3 * step));
+  const high = Math.max(current, max + 5 * step);
+  const options: number[] = [];
+  for (let value = low - (low % step || 0); value <= high; value += step) {
+    if (value > 0) {
+      options.push(value);
+    }
+  }
+  if (!options.includes(current)) {
+    options.push(current);
+    options.sort((a, b) => a - b);
+  }
+  return options;
+}
+
+/** Tap the number you did: no ± buttons to hit mid-set. */
+function valuePicker(label: string, options: readonly number[], selected: number): string {
   return `
-    <div class="stepper" data-stepper="${name}">
-      <button type="button" data-action="step" data-field="${name}" data-delta="-1" aria-label="Less">−</button>
-      <output id="${name}-value" aria-live="polite"><strong>${value}</strong><small>${escapeHtml(unit)}</small></output>
-      <button type="button" data-action="step" data-field="${name}" data-delta="1" aria-label="More">+</button>
-    </div>
+    <fieldset class="pick">
+      <legend>${escapeHtml(label)}</legend>
+      <div class="pick-strip">
+        ${options.map((value) => `
+          <button type="button" data-action="pick" data-value="${value}" aria-pressed="${value === selected ? 'true' : 'false'}">${value}</button>
+        `).join('')}
+      </div>
+    </fieldset>
   `;
 }
 
 function rirPicker(selected: number | null, floor: number): string {
   return `
     <fieldset class="rir">
-      <legend>Reps in reserve <small>(how many more you could do)</small></legend>
+      <legend>Reps left in the tank</legend>
       <div class="segmented">
         ${[0, 1, 2, 3, 4].map((rir) => `
           <button type="button" data-action="rir" data-rir="${rir}" aria-pressed="${selected === rir ? 'true' : 'false'}" class="${rir < floor ? 'risky' : ''}">${rir === 4 ? '4+' : rir}</button>
@@ -331,15 +357,16 @@ function rirPicker(selected: number | null, floor: number): string {
 }
 
 function bandPicker(prefs: Prefs, band: number): string {
+  const levels = Array.from({ length: BAND_LEVELS }, (_, index) => index + 1);
   return `
-    <div class="band-row">
-      <span class="muted">Band</span>
-      <div class="stepper small">
-        <button type="button" data-action="band" data-delta="-1" aria-label="Lighter band" ${band <= 1 ? 'disabled' : ''}>−</button>
-        <output>${escapeHtml(bandLabel(prefs, band))}</output>
-        <button type="button" data-action="band" data-delta="1" aria-label="Heavier band" ${band >= BAND_LEVELS ? 'disabled' : ''}>+</button>
+    <fieldset class="rir">
+      <legend>Band: ${escapeHtml(bandLabel(prefs, band))}</legend>
+      <div class="segmented">
+        ${levels.map((level) => `
+          <button type="button" data-action="band-pick" data-band="${level}" aria-pressed="${level === band ? 'true' : 'false'}">${level}</button>
+        `).join('')}
       </div>
-    </div>
+    </fieldset>
   `;
 }
 
@@ -358,39 +385,33 @@ export function renderExercise(draft: Draft, prefs: Prefs, base: string, input: 
   const change = item.change === 'start' || item.change === 'none'
     ? ''
     : `<span class="badge ${isProgression(item.change) ? 'up' : item.change.endsWith('-') || item.change === 'repeat' ? 'down' : ''}">${escapeHtml(CHANGE_LABELS[item.change])}</span>`;
+  const p = item.prescription;
+  const unit = unitLabel(ex, variant);
+  const holdStep = ex.kind === 'hold' ? 5 : 1;
   const logger = complete
-    ? ''
+    ? `<div class="logged-done">
+        <p class="done">✓ Round ${circuit.round} logged</p>
+        <button type="button" class="link" data-action="undo">Undo</button>
+      </div>`
     : `
-      <div class="logger">
-        <h3>Round ${circuit.round} of ${circuit.rounds}</h3>
-        ${stepper('value', input.value, unitLabel(ex, variant))}
-        ${rirPicker(input.rir, ex.rirFloor)}
-        ${variant.banded && input.band !== null ? bandPicker(prefs, input.band) : ''}
-      </div>
+      ${valuePicker(`${unit[0]?.toUpperCase() ?? ''}${unit.slice(1)} · target ${p.min}–${p.max}`, pickOptions(p.min, p.max, input.value, holdStep), input.value)}
+      ${ex.kind === 'reps' ? rirPicker(input.rir, ex.rirFloor) : ''}
     `;
+  const band = variant.banded && input.band !== null
+    ? `<button type="button" class="badge band-badge" data-action="form">${escapeHtml(bandLabel(prefs, input.band))}</button>`
+    : '';
   const primary: BarAction = complete
     ? { action: 'next', label: lastInCircuit ? 'Finisher ▶' : 'Next ▶' }
-    : { action: 'log', label: `Log round ${circuit.round} ✓` };
+    : { action: 'log', label: `Done · ${input.value} ${unit} ✓` };
 
   return `
-    <header class="player-head">
-      <button type="button" class="ghost" data-action="exit" aria-label="Leave workout">✕</button>
-      <span>Round ${circuit.round}/${circuit.rounds} · ${index + 1}/${circuit.size}${draft.deload ? ' · deload' : ''}</span>
-      <button type="button" class="ghost ${prefs.tempoCue ? 'on' : ''}" data-action="tempo" aria-pressed="${prefs.tempoCue ? 'true' : 'false'}" title="Tempo metronome">♩</button>
-    </header>
-    <section class="card exercise">
-      ${exerciseTop(variant.demo, base, variant.name, change)}
-      <div class="target">${targetLine(item, prefs)}</div>
+    ${playerHead(`Round ${circuit.round}/${circuit.rounds} · ${index + 1}/${circuit.size}${draft.deload ? ' · deload' : ''}`)}
+    <section class="exercise play">
+      <div class="play-title"><h2>${escapeHtml(variant.name)}</h2>${band}${change}</div>
+      <div class="play-demo">${renderDemo(variant.demo, base)}</div>
       ${logger}
-      ${loggedChips(item, prefs)}
-      ${complete ? `<p class="done">✓ Round ${circuit.round} logged.</p>` : ''}
-      <div class="row adjust">
-        <button type="button" class="link" data-action="easier">Too hard: easier</button>
-        ${complete ? '<button type="button" class="link" data-action="undo">Undo last round</button>' : ''}
-        <button type="button" class="link" data-action="harder">Too easy: harder</button>
-      </div>
-      ${cuesBox(variant.cues ?? ex.cues, variant.hint)}
     </section>
+    ${formSheet({ title: variant.name, target: targetLine(item, prefs), cues: variant.cues ?? ex.cues, hint: variant.hint, logged: loggedLine(item), adjust: true, extra: variant.banded && input.band !== null && !complete ? bandPicker(prefs, input.band) : '' })}
     ${playerBar(primary, { extra: complete ? null : { action: 'next', label: 'Skip' } })}
   `;
 }
@@ -426,25 +447,23 @@ export function renderFinisher(draft: Draft, base: string, input: InputState, ti
   const station = isPlank && timer === 'hold'
     ? `<div class="timer"><div class="timer-big" id="hold-elapsed">0</div>
         <p class="muted">Target ${input.value} s</p></div>`
-    : stepper('value', input.value, isPlank ? 's' : 'swings');
+    : isPlank
+      ? valuePicker(`Hold target · ${FINISHER.plankMin}–${FINISHER.plankMax} s`, pickOptions(FINISHER.plankMin, FINISHER.plankMax, input.value, 5), input.value)
+      : valuePicker('Swings', pickOptions(FINISHER.swings, FINISHER.swings, input.value), input.value);
   const primary: BarAction = isPlank
     ? timer === 'hold'
       ? { action: 'hold-stop', label: 'Plank done ✓' }
       : { action: 'hold-start', label: `▶ Start ${input.value} s plank` }
-    : { action: 'log', label: 'Swings done ✓' };
+    : { action: 'log', label: `Done · ${input.value} swings ✓` };
+  const title = isPlank ? 'Plank' : `${FINISHER.swings} KB swings`;
   return `
-    <header class="player-head">
-      <button type="button" class="ghost" data-action="exit" aria-label="Leave workout">✕</button>
-      <span>Finisher</span>
-      <span class="clock" id="finisher-clock">${formatClock(elapsed)}</span>
-    </header>
-    <section class="card exercise">
-      <div class="timer-label">Round ${round} of ${circuit.finisherRounds} · ${isPlank ? 'plank' : 'swings'}</div>
-      ${exerciseTop(variant.demo, base, isPlank ? `Plank ${FINISHER.plankMin}–${FINISHER.plankMax} s` : `${FINISHER.swings} KB swings`, '')}
-      <p class="muted small">No rest: swings, straight into the plank, straight into the next round.</p>
-      <div class="logger">${station}</div>
-      ${cuesBox(ex.cues, undefined)}
+    ${playerHead(`Finisher · round ${round}/${circuit.finisherRounds}`, `<span class="clock" id="finisher-clock">${formatClock(elapsed)}</span>`)}
+    <section class="exercise play">
+      <div class="play-title"><h2>${escapeHtml(title)}</h2></div>
+      <div class="play-demo">${renderDemo(variant.demo, base)}</div>
+      ${station}
     </section>
+    ${formSheet({ title, target: 'No rest: swings, straight into the plank, straight into the next round.', cues: ex.cues, logged: '', adjust: false })}
     ${playerBar(primary, { extra: { action: 'finish', label: 'End' } })}
   `;
 }
@@ -670,7 +689,6 @@ export function renderSettings(prefs: Prefs, view: { email: string | null; signI
       <h3>Workout</h3>
       <label class="toggle"><input type="checkbox" name="sound" ${prefs.sound ? 'checked' : ''} /> Sound (timer beeps)</label>
       <label class="toggle"><input type="checkbox" name="vibrate" ${prefs.vibrate ? 'checked' : ''} /> Vibration</label>
-      <label class="toggle"><input type="checkbox" name="tempoCue" ${prefs.tempoCue ? 'checked' : ''} /> Tempo metronome on by default</label>
       <button type="submit" class="big">Save settings</button>
     </form>
     <section class="card">

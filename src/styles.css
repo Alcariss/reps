@@ -159,24 +159,6 @@ button.ghost {
   padding: 0.4rem;
 }
 
-/* Metronome beat: the ♩ button flashes, so the tempo works without sound. */
-button.ghost.pulse {
-  animation: beat 0.35s ease-out;
-}
-
-button.ghost.pulse.accent {
-  animation-name: beat-accent;
-}
-
-@keyframes beat {
-  from { background: rgba(249, 115, 22, 0.45); }
-  to { background: transparent; }
-}
-
-@keyframes beat-accent {
-  from { background: var(--accent); color: var(--accent-text); }
-  to { background: transparent; }
-}
 
 button.ghost.on {
   color: var(--accent);
@@ -400,9 +382,18 @@ body.in-player .container {
 .player-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 0.5rem;
   color: var(--muted);
   font-weight: 600;
+}
+
+.player-head > span:first-of-type {
+  flex: 1;
+  text-align: center;
+}
+
+.player-head .info {
+  font-size: 1.4rem;
 }
 
 .checklist {
@@ -926,4 +917,141 @@ details summary {
 .clock {
   font-variant-numeric: tabular-nums;
   color: var(--accent);
+}
+
+/* Player: big demo, tap-to-pick numbers, everything else in the ⓘ sheet. */
+.exercise.play {
+  gap: 0.75rem;
+}
+
+.play-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 0.6rem;
+}
+
+.play-title h2 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.play-demo .demo {
+  aspect-ratio: auto;
+  height: min(38vh, 100vw);
+}
+
+.pick,
+.exercise .rir {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.pick legend,
+.exercise .rir legend {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-bottom: 0.35rem;
+}
+
+.pick-strip {
+  display: flex;
+  gap: 0.45rem;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  padding-bottom: 0.2rem;
+  scrollbar-width: none;
+}
+
+.pick-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.pick-strip button {
+  flex: 0 0 auto;
+  min-width: 60px;
+  min-height: 60px;
+  font-size: 1.4rem;
+  font-weight: 700;
+  scroll-snap-align: center;
+  background: var(--surface-2, #273449);
+  color: var(--text);
+}
+
+.pick-strip button[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.exercise .segmented button {
+  min-height: 52px;
+  font-size: 1.15rem;
+}
+
+.logged-done {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sheet {
+  width: min(100% - 1.5rem, 34rem);
+  max-height: 85vh;
+  border: 1px solid var(--border, #334155);
+  border-radius: 16px;
+  background: var(--surface, #1e293b);
+  color: var(--text);
+  padding: 1rem 1.1rem;
+}
+
+.sheet::backdrop {
+  background: rgba(2, 6, 23, 0.7);
+}
+
+.sheet h2 {
+  margin: 0 0 0.3rem;
+}
+
+.sheet h3 {
+  margin: 0.8rem 0 0.3rem;
+  font-size: 1rem;
+}
+
+.sheet .adjust {
+  gap: 0.5rem;
+  margin-top: 0.8rem;
+}
+
+.sheet .adjust button {
+  flex: 1;
+}
+
+.sheet .close-sheet {
+  width: 100%;
+  margin-top: 0.8rem;
+}
+
+.band-badge {
+  min-height: 0;
+  border: 0;
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.sheet .rir {
+  border: 0;
+  padding: 0;
+  margin: 0.8rem 0 0;
+}
+
+.sheet .rir legend {
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.sheet .segmented {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
 }
