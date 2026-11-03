@@ -25,7 +25,7 @@ import { addDays, daysBetween } from './dates';
 import { startDemoLoop } from './demo-loop';
 import { clearGifs, loadGifs } from './media';
 import { createMusic } from './music';
-import { adjust, deloadStatus, isProgression, replay, type Change, type ExerciseState, type LoggedSet } from './engine';
+import { deloadStatus, isProgression, replay, type Change, type ExerciseState, type LoggedSet } from './engine';
 import {
   setKey,
   toBody,
@@ -41,7 +41,6 @@ import { DEFAULT_PREFS, normalizePrefs, type Prefs } from './prefs';
 import {
   BAND_LEVELS,
   CIRCUIT_POOL,
-  EASIER_ADVICE,
   EXERCISES,
   circuitFor,
   exercise,
@@ -219,8 +218,7 @@ function sessionLog(): { date: string; workout: WorkoutId }[] {
 
 function states(): Record<string, ExerciseState> {
   return replay(allSets(), {
-    resetAfter: state.prefs.deloadFrom === null ? null : addDays(state.prefs.deloadFrom, 6),
-    overrides: state.prefs.overrides
+    resetAfter: state.prefs.deloadFrom === null ? null : addDays(state.prefs.deloadFrom, 6)
   });
 }
 
@@ -637,13 +635,6 @@ function finishWorkout(): void {
   stopTimer();
   draft.restEndsAt = null;
   draft.step = draft.exercises.length;
-  // Today's log now decides the next prescription; drop the manual overrides it used.
-  for (const item of draft.exercises) {
-    if (item.logged.length > 0) {
-      delete state.prefs.overrides[item.exercise];
-    }
-  }
-  savePrefs();
   const after = states();
   const counted = draft.circuit ? draft.exercises.slice(0, draft.circuit.size) : draft.exercises;
   state.progressed = {};
@@ -664,39 +655,6 @@ function closeWorkout(): void {
   saveDraft();
   stopTimer();
   location.hash = 'today';
-}
-
-function adjustCurrent(direction: 1 | -1): void {
-  const draft = state.draft;
-  const item = currentItem();
-  if (!draft || !item) {
-    return;
-  }
-  const ex = exercise(item.exercise);
-  const band = state.input.band ?? item.band;
-  const next = adjust(item.exercise, { variant: item.variant, band }, direction);
-  if (next.variant === item.variant && next.band === band) {
-    toast(direction === 1 ? 'Already the hardest step.' : easiestHint(item.exercise), 'info', 6000);
-    return;
-  }
-  if (next.variant !== item.variant && item.logged.length > 0) {
-    toast('Undo this exercise’s sets before switching variation.', 'error');
-    return;
-  }
-  item.variant = next.variant;
-  item.band = next.band;
-  item.change = 'manual';
-  state.prefs.overrides[item.exercise] = { variant: next.variant, band: next.band, date: draft.date };
-  savePrefs();
-  saveDraft();
-  resetInput();
-  toast(`${findVariant(ex, next.variant).name}${next.band === null ? '' : `, band L${next.band}`}`);
-  render();
-}
-
-/** "Too hard" on the easiest step and lightest band: never a dead end. */
-function easiestHint(exerciseId: string): string {
-  return `Easiest step already. ${EASIER_ADVICE[exerciseId] ?? 'Do fewer reps, or skip it today.'}`;
 }
 
 // ---------- timers ----------
@@ -868,24 +826,12 @@ async function onAction(event: Event): Promise<void> {
         option.setAttribute('aria-pressed', option === button ? 'true' : 'false');
       }
       break;
-    case 'band-pick':
-      if (state.input.band !== null) {
-        state.input.band = clampBand(Number(button.dataset.band));
-        render();
-      }
-      break;
     case 'log':
       unlockAudio();
       logCurrentSet();
       break;
     case 'undo':
       await undoLastSet();
-      break;
-    case 'easier':
-      adjustCurrent(-1);
-      break;
-    case 'harder':
-      adjustCurrent(1);
       break;
     case 'rest-add':
       if (draft?.restEndsAt) {
@@ -940,24 +886,6 @@ async function onAction(event: Event): Promise<void> {
       toast(queue.size() === 0 ? 'Everything is synced.' : 'Still offline. Will retry.', queue.size() === 0 ? 'info' : 'error');
       render();
       break;
-    case 'override': {
-      const exerciseId = button.dataset.exercise ?? '';
-      const current = states()[exerciseId];
-      if (!current) {
-        break;
-      }
-      const direction = button.dataset.direction === '1' ? 1 : -1;
-      const next = adjust(exerciseId, current, direction);
-      if (next.variant === current.variant && next.band === current.band) {
-        toast(direction === 1 ? 'Already the hardest step.' : easiestHint(exerciseId), 'info', 6000);
-        break;
-      }
-      state.prefs.overrides[exerciseId] = { ...next, date: today() };
-      savePrefs();
-      toast(`Next time: ${findVariant(exercise(exerciseId), next.variant).name}${next.band === null ? '' : ` (band L${next.band})`}`);
-      render();
-      break;
-    }
     case 'delete-body': {
       const id = button.dataset.id;
       if (id && confirm('Delete this entry?')) {

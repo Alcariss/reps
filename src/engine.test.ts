@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  adjust,
   deloadStatus,
   evaluate,
   initialState,
@@ -49,12 +48,29 @@ describe('evaluate', () => {
     expect(evaluate(squat, session('2026-01-01', 'squat', 'goblet-squat', [9, 8, 6], 0))).toBe('stall');
   });
 
+  it('stalls when any round misses the bottom of the range, whatever the RIR', () => {
+    expect(evaluate(squat, session('2026-01-01', 'squat', 'goblet-squat', [10, 9, 7], 2))).toBe('stall');
+  });
+
   it('ignores sessions with fewer than 3 rounds (deload, cut short)', () => {
     expect(evaluate(squat, session('2026-01-01', 'squat', 'goblet-squat', [15, 15]))).toBe('incomplete');
   });
 });
 
 describe('replay', () => {
+  it('steps back by itself after missing the range twice, and repeats on the easiest step', () => {
+    const missed = [
+      ...session('2026-01-01', 'pushup', 'pushup', [6, 5, 4]),
+      ...session('2026-01-03', 'pushup', 'pushup', [5, 5, 4])
+    ];
+    expect(replay(missed).pushup).toMatchObject({ variant: 'incline-pushup', change: 'variant-' });
+    const easiest = [
+      ...session('2026-01-01', 'pushup', 'incline-pushup', [3, 3, 2]),
+      ...session('2026-01-03', 'pushup', 'incline-pushup', [3, 2, 2])
+    ];
+    expect(replay(easiest).pushup).toMatchObject({ variant: 'incline-pushup', change: 'repeat' });
+  });
+
   it('starts every exercise at its first variant with 90 s rest', () => {
     const states = replay([]);
     expect(states.squat).toMatchObject({ variant: 'goblet-squat', band: null, rest: 90, change: 'start' });
@@ -133,21 +149,6 @@ describe('replay', () => {
     const state = replay(swings).swing!;
     expect(state).toMatchObject({ change: 'start', lastOutcome: null });
     expect(state.history).toHaveLength(1);
-  });
-
-  it('applies a manual override only when it is newer than the log', () => {
-    const sets = session('2026-01-05', 'squat', 'goblet-squat', [12, 12, 12]);
-    expect(replay(sets, { overrides: { squat: { variant: 'goblet-squat-tempo', band: null, date: '2026-01-06' } } }).squat).toMatchObject({ variant: 'goblet-squat-tempo', change: 'manual' });
-    expect(replay(sets, { overrides: { squat: { variant: 'goblet-squat-tempo', band: null, date: '2026-01-04' } } }).squat).toMatchObject({ variant: 'goblet-squat', change: 'reps+' });
-  });
-});
-
-describe('adjust', () => {
-  it('moves the band before the variant, and stops at the easiest step', () => {
-    expect(adjust('one-arm-row', { variant: 'door-band-row', band: 3 }, 1)).toEqual({ variant: 'door-band-row', band: 4 });
-    expect(adjust('one-arm-row', { variant: 'door-band-row', band: 1 }, -1)).toEqual({ variant: 'door-band-row', band: 1 });
-    expect(adjust('pushup', { variant: 'band-pushup', band: 1 }, -1)).toEqual({ variant: 'pushup', band: null });
-    expect(adjust('pike-pushup', { variant: 'incline-pike-pushup', band: null }, -1)).toEqual({ variant: 'incline-pike-pushup', band: null });
   });
 });
 
