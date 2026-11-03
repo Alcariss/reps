@@ -303,6 +303,7 @@ function playerHead(label: string, right = ''): string {
       <button type="button" class="ghost" data-action="exit" aria-label="Leave workout">✕</button>
       <span>${escapeHtml(label)}</span>
       ${right}
+      <button type="button" class="ghost music" data-action="music" aria-label="Lo-fi music" aria-pressed="false">🎵</button>
       <button type="button" class="ghost info" data-action="form" aria-label="Form cues">ⓘ</button>
     </header>
   `;
@@ -686,6 +687,7 @@ export function renderSettings(prefs: Prefs, view: { email: string | null; signI
         <label class="inline">L${index + 1}<input name="band-${index}" value="${escapeHtml(name)}" maxlength="40" /></label>`).join('')}
       <h3>Workout</h3>
       <label class="toggle"><input type="checkbox" name="sound" ${prefs.sound ? 'checked' : ''} /> Sound (timer beeps)</label>
+      <label class="toggle"><input type="checkbox" name="music" ${prefs.music ? 'checked' : ''} /> Lo-fi music during workouts</label>
       <label class="toggle"><input type="checkbox" name="vibrate" ${prefs.vibrate ? 'checked' : ''} /> Vibration</label>
       <button type="submit" class="big">Save settings</button>
     </form>
