@@ -54,37 +54,114 @@ export function tick(signals: Signals, accent = false): void {
   }
 }
 
-type WakeLockSentinelLike = { release(): Promise<void> };
+type WakeLockSentinelLike = { readonly released?: boolean; release(): Promise<void>; addEventListener?(type: 'release', listener: () => void): void };
 let wakeLock: WakeLockSentinelLike | null = null;
+let requesting = false;
 let wanted = false;
+let video: HTMLVideoElement | null = null;
+
+/**
+ * iOS needs more than the Screen Wake Lock API: home-screen apps before
+ * iOS 18.4 accept the request and still lock, and the lock is dropped
+ * whenever the app is hidden. So on iOS a silent looping video plays too
+ * (the NoSleep.js technique), and both are re-armed on every tap and every
+ * return to the app while a workout is open.
+ */
+const isIos = /iP(hone|ad|od)/.test(navigator.userAgent)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
 async function requestWakeLock(): Promise<void> {
   const api = (navigator as Navigator & { wakeLock?: { request(type: 'screen'): Promise<WakeLockSentinelLike> } }).wakeLock;
-  if (!api || document.visibilityState !== 'visible') {
+  if (!api || requesting || document.visibilityState !== 'visible' || (wakeLock !== null && !wakeLock.released)) {
     return;
   }
+  requesting = true;
   try {
-    wakeLock = await api.request('screen');
+    const sentinel = await api.request('screen');
+    sentinel.addEventListener?.('release', () => {
+      if (wakeLock === sentinel) {
+        wakeLock = null;
+      }
+    });
+    wakeLock = sentinel;
+    if (!wanted) {
+      void releaseWakeLock();
+    }
   } catch {
-    // Low battery or no permission: the workout still works, the screen may dim.
+    // Low battery or no permission: the video fallback (iOS) may still help.
     wakeLock = null;
+  } finally {
+    requesting = false;
   }
 }
 
-document.addEventListener('visibilitychange', () => {
-  if (wanted && document.visibilityState === 'visible') {
+async function releaseWakeLock(): Promise<void> {
+  const current = wakeLock;
+  wakeLock = null;
+  await current?.release().catch(() => undefined);
+}
+
+async function loadVideo(): Promise<HTMLVideoElement> {
+  if (video) {
+    return video;
+  }
+  const { NO_SLEEP_MP4 } = await import('./no-sleep-video');
+  const element = document.createElement('video');
+  element.setAttribute('title', 'Keep screen on');
+  element.setAttribute('playsinline', '');
+  element.setAttribute('aria-hidden', 'true');
+  element.loop = true;
+  element.src = NO_SLEEP_MP4;
+  element.style.cssText = 'position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0;pointer-events:none';
+  // Stay inside the first half-second so the loop never shows a seam.
+  element.addEventListener('timeupdate', () => {
+    if (element.currentTime > 0.5) {
+      element.currentTime = Math.random() * 0.5;
+    }
+  });
+  document.body.append(element);
+  video = element;
+  return element;
+}
+
+function playVideo(): void {
+  if (!isIos) {
+    return;
+  }
+  void loadVideo().then((element) => {
+    if (wanted && element.paused) {
+      element.play().catch(() => undefined);
+    }
+  });
+}
+
+function rearm(): void {
+  if (wanted) {
     void requestWakeLock();
+    playVideo();
+  }
+}
+
+// Both need a user gesture on iOS; any tap during a workout re-arms them.
+document.addEventListener('pointerdown', rearm, { capture: true, passive: true });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    rearm();
   }
 });
 
 export function keepScreenOn(on: boolean): void {
+  if (on === wanted) {
+    if (on) {
+      rearm();
+    }
+    return;
+  }
   wanted = on;
   if (on) {
-    if (wakeLock === null) {
-      void requestWakeLock();
-    }
+    rearm();
   } else {
-    void wakeLock?.release().catch(() => undefined);
-    wakeLock = null;
+    void releaseWakeLock();
+    video?.pause();
   }
 }
